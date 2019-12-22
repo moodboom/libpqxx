@@ -16,6 +16,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
+# MDM Ubuntu 18.04 CMake does not directly support postgresql v12 yet, so we help it here.
+set(PostgreSQL_ADDITIONAL_VERSIONS 12)
+
 option(BUILD_DOC "Build documentation" OFF)
 
 if(NOT SKIP_BUILD_TEST)
