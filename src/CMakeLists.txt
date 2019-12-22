@@ -81,10 +81,11 @@ if(NOT SKIP_PQXX_SHARED)
     library_target_setup(pqxx_shared)
 endif()
 
+# MDM un-experimentally re-enabled.  WTF
 # XXX: Experimentally disabled.
-#if(NOT SKIP_PQXX_STATIC)
-#    # Build a static libary
-#    add_library(pqxx_static STATIC ${CXX_SOURCES})
-#    set_target_properties(pqxx_static PROPERTIES OUTPUT_NAME pqxx)
-#    library_target_setup(pqxx_static)
-#endif()
+if(NOT SKIP_PQXX_STATIC)
+    # Build a static libary
+    add_library(pqxx_static STATIC ${CXX_SOURCES})
+    set_target_properties(pqxx_static PROPERTIES OUTPUT_NAME pqxx)
+    library_target_setup(pqxx_static)
+endif()
