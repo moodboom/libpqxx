@@ -1,3 +1,6 @@
+#include <pqxx/largeobject>
+#include <pqxx/transaction>
+
 #include "test_helpers.hxx"
 
 using namespace pqxx;
@@ -13,9 +16,8 @@ void test_056()
   quiet_errorhandler d(conn);
 
   PQXX_CHECK_THROWS(
-	tx.exec("DELIBERATELY INVALID TEST QUERY...", "invalid_query"),
-	sql_error,
-	"SQL syntax error did not raise expected exception.");
+    tx.exec("DELIBERATELY INVALID TEST QUERY...", "invalid_query"), sql_error,
+    "SQL syntax error did not raise expected exception.");
 }
 
 

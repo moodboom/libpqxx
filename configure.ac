@@ -7,15 +7,20 @@ AC_INIT(
 	[m4_esyscmd_s([./tools/extract_version])],
 	[Jeroen T. Vermeulen])
 AC_LANG(C++)
+
 # Require C++17 at minimum.
 AX_CXX_COMPILE_STDCXX_17([noext])
+# We need to store this, so we'll know what to pass to clang-tidy.
+# TODO: Is there any way we can pick up a user-supplied option?
+AC_SUBST(PQXX_CXX_VERSION, -std=c++17)
+
 AC_CONFIG_SRCDIR([src/connection.cxx])
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_MACRO_DIR([config/m4])
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE([subdir-objects])
 
 PQXX_ABI=m4_esyscmd_s([./tools/extract_version --abi])
-AC_SUBST(PQXXVERSION)
+AC_SUBST(PQXXVERSION, $PACKAGE_VERSION)
 AC_SUBST(PQXX_ABI)
 
 AC_CONFIG_HEADER([include/pqxx/config.h])
@@ -49,14 +54,10 @@ AC_PATH_TOOL([DOXYGEN], [doxygen], [nodoxygen])
 AC_ARG_VAR([HAVE_DOT],
 	[Variable used by doxygen to declare availibility of dot])
 AC_CHECK_TOOL([HAVE_DOT], [dot], [YES], [NO])
-AC_ARG_VAR([XMLTO], [Path to xmlto needed to build tutorial documentation])
-AC_PATH_TOOL([XMLTO], [xmlto], [noxmlto])
-AS_IF([test "$enable_documentation" = "yes" && test "$DOXYGEN" = "nodoxygen" -o "$XMLTO" = "noxmlto"],
-	[AC_MSG_ERROR([could not files tools necessary to build documentation])])
+AS_IF([test "$enable_documentation" = "yes" && test "$DOXYGEN" = "nodoxygen"],
+      [AC_MSG_ERROR([could not find tools necessary to build documentation])])
 AM_CONDITIONAL([BUILD_REFERENCE],
 	[test "$enable_documentation" != "no" -a "$DOXYGEN" != "nodoxygen"])
-AM_CONDITIONAL([BUILD_TUTORIAL],
-	[test "$enable_documentation" != "no" -a "$XMLTO" != "xmlto"])
 
 AM_MAINTAINER_MODE
 
@@ -69,6 +70,12 @@ AC_MSG_RESULT(${enable_maintainer_mode})
 AC_MSG_CHECKING([audit])
 AC_ARG_ENABLE(audit)
 AC_MSG_RESULT(${enable_audit})
+
+# See if we want "suggestions," such as "this class could be final."
+# (The suggestions are often useful, but can also easily be wrong.)
+AC_MSG_CHECKING([suggest])
+AC_ARG_ENABLE(suggest)
+AC_MSG_RESULT(${enable_suggest})
 
 
 AC_ARG_ENABLE(shared)
@@ -139,9 +146,9 @@ then
 			-Wredundant-decls \
 			-Wshadow \
 			-Wsign-promo \
-			-Wwrite-strings  \
 			-Wundef \
-			-Wunused
+			-Wunused \
+			-Wwrite-strings
 
 		# "Iffy" g++ options.  Some reasonably current g++-like
 		# compilers may not support these.
@@ -150,13 +157,17 @@ then
 			-Wattribute-alias=2 \
 			-Wextra-semi \
 			-Wlogical-op \
+			-Wmismatched-tags \
+			-Wnoexcept \
+			-Wredundant-tags \
 			-Wrestrict \
 			-Wstringop-overflow \
-			-Wsuggest-override \
 			-Wzero-as-null-pointer-constant \
 			-Warray-bounds=2 \
 			-Wduplicated-branches \
 			-Wduplicated-cond \
+			-Wsuggest-attribute=noreturn \
+			-Wsuggest-override \
 			-Wtrampolines
 	fi
 
@@ -165,12 +176,47 @@ then
 	then
 		add_compiler_opts_if_ok \
 			-fsanitize=address \
-			-fsanitize=leak \
-			-fsanitize=undefined \
 			-fsanitize-address-use-after-scope \
+			-fsanitize=alignment \
+			-fsanitize=bool \
+			-fsanitize=bounds \
+			-fsanitize=bounds-strict \
+			-fsanitize=builtin \
+			-fsanitize=enum \
+			-fsanitize=float-cast-overflow \
+			-fsanitize=float-divide-by-zero \
+			-fsanitize=integer-divide-by-zero \
+			-fsanitize=leak \
+			-fsanitize=nonnull-attribute \
+			-fsanitize=null \
+			-fsanitize=object-size \
+			-fsanitize=pointer-compare \
+			-fsanitize=pointer-overflow \
+			-fsanitize=pointer-subtract \
+			-fsanitize=return \
+			-fsanitize=returns-nonnull-attribute \
+			-fsanitize=shift \
+			-fsanitize=shift-base \
+			-fsanitize=shift-exponent \
+			-fsanitize=signed-integer-overflow \
+			-fsanitize=undefined \
+			-fsanitize=unreachable \
+			-fsanitize=vla-bound \
+			-fsanitize=vptr \
 			-fstack-protector-all
 	fi
 
+	# In "suggest" mode, enable a bunch of code suggestions.
+	if test "$enable_suggest" = "yes"
+	then
+		add_compiler_opts_if_ok \
+			-Wsuggest-attribute=cold \
+			-Wsuggest-attribute=const \
+			-Wsuggest-attribute=malloc \
+			-Wsuggest-attribute=pure \
+			-Wsuggest-final-types \
+			-Wsuggest-final-methods
+	fi
 
 AC_MSG_CHECKING([g++ visibility attribute])
 gcc_visibility=yes
@@ -218,6 +264,19 @@ AC_COMPILE_IFELSE(
 		[Define if compiler supports __cxa_demangle]),
 	cxa_demangle=no)
 AC_MSG_RESULT($cxa_demangle)
+
+
+# Check for sufficient Concepts support, introduced with C++20.
+AC_MSG_CHECKING([concepts])
+concepts=yes
+AC_COMPILE_IFELSE(
+	[read_test(concepts.cxx)],
+	AC_DEFINE(
+		[PQXX_HAVE_CONCEPTS],
+		1,
+		[Define if compiler supports Concepts and <ranges> header.]),
+	concepts=no)
+AC_MSG_RESULT($concepts)
 
 
 # Check for strnlen_s.
@@ -275,6 +334,32 @@ AC_LINK_IFELSE(
 	have_charconv_float=no)
 AC_MSG_RESULT($have_charconv_float)
 
+# As per #262, clang with libcxxrt does not support thread_local on non-POD
+# objects.  Luckily we can live without those, it's just less efficient.
+AC_MSG_CHECKING([for full thread_local support])
+have_thread_local=yes
+AC_LINK_IFELSE(
+	[read_test(thread_local.cxx)],
+	AC_DEFINE(
+		[PQXX_HAVE_THREAD_LOCAL],
+		1,
+		[Define if thread_local is fully supported.]),
+	have_thread_local=no)
+AC_MSG_RESULT($have_thread_local)
+
+# Still getting errors on std::visit() from clang 6, and on one of my systems,
+# on gcc 7 as well.
+AC_MSG_CHECKING([for full std::variant support])
+have_variant=yes
+AC_LINK_IFELSE(
+	[read_test(variant.cxx)],
+	AC_DEFINE(
+		[PQXX_HAVE_VARIANT],
+		1,
+		[Define if std::variant is fully supported.]),
+	have_variant=no)
+AC_MSG_RESULT($have_variant)
+
 # Doing my own test for poll() for now.  The test built into autoconf-archive
 # triggers stupid warnings.
 # TODO: Try newer version of autoconf-archive.
@@ -331,8 +416,8 @@ fi # No poll()
 
 
 # Find PostgreSQL includes and libraries
-AC_PATH_PROGS(PG_CONFIG, pg_config)
 AC_PATH_PROG([PKG_CONFIG], [pkg-config])
+AC_PATH_PROGS(PG_CONFIG, pg_config)
 
 AC_ARG_WITH(
     [postgres-include],
@@ -343,30 +428,50 @@ AC_ARG_WITH(
         [test "x$with_postgres_include" = "xyes"],
         [with_postgres_include=""]))
 
-if test -n "$PKG_CONFIG" && test -x "$PKG_CONFIG"; then
-AS_IF(
-    [test -z "$with_postgres_include"],
-    [with_postgres_include=$($PKG_CONFIG libpq --cflags | sed 's/^-I//' | sed 's/ *$//')])
-AC_MSG_NOTICE([using PostgreSQL headers at $with_postgres_include])
-AC_SUBST(with_postgres_include)
-POSTGRES_INCLUDE="-I${with_postgres_include}"
-AC_SUBST(POSTGRES_INCLUDE)
-elif test -n "$PG_CONFIG" && test -x "$PG_CONFIG"; then
-AS_IF(
-    [test -z "$with_postgres_include"],
-    [with_postgres_include=$($PG_CONFIG --includedir)])
-AC_MSG_NOTICE([using PostgreSQL headers at $with_postgres_include])
-AC_SUBST(with_postgres_include)
-POSTGRES_INCLUDE="-I${with_postgres_include}"
-AC_SUBST(POSTGRES_INCLUDE)
+if test -n "$with_postgres_include"
+then
+    POSTGRES_INCLUDE="-I$with_postgres_include"
 else
-       AC_MSG_ERROR([
-Neither PostgreSQL configuration script pg_config nor pkg-config found.
-Make sure at least one of these is in your command path before configuring.
-Without either of them, the configure script has no way to find the right
-location for the libpq library and its headers.
-])
+    if test -x "$PKG_CONFIG" || test -x "$PG_CONFIG"
+    then
+        # We should prefer pkg-config over pg_config, but there seems to be a
+        # problem in pkg-config 1.6.3.  Until that's been resolved (#291), go
+        # with pg_config if we can.
+        if test -x "$PG_CONFIG"
+        then
+            # From pg_config we can either get the C compiler options used to
+            # compile postgres, which isn't quite what we want; or we can get
+            # the headers directory, without the full option.  That's something
+            # we can work with.  The compiler must support the "-I" option for
+            # that, but both scripts assume that anyway.
+            POSTGRES_INCLUDE="-I$($PG_CONFIG --includedir)"
+        else
+            # From pkg-config we can get the compiler options to extend the
+            # include path.  We use that.
+            POSTGRES_INCLUDE=$($PKG_CONFIG libpq --cflags-only-I)
+        fi
+        AC_MSG_NOTICE([finding PostgreSQL headers using $POSTGRES_INCLUDE])
+    else
+        POSTGRES_INCLUDE=""
+
+        # We have nothing to tell us where the libpq headers are.  That's fine
+        # if the compiler can find it, but if not, fail here.
+        AC_CHECK_HEADER(
+	        [libpq-fe.h],
+	        [],
+	[AC_MSG_ERROR([
+Can't find the main PostgreSQL client header, libpq-fe.h.  Make sure that it
+is installed, and either use the --with-postgres-include option or install
+pkg-config.
+])])
+    fi
 fi
+AC_SUBST(POSTGRES_INCLUDE)
+
+# Add the compiler option so we can compile configure tests which rely on the
+# libpq headers.
+CPPFLAGS="$CPPFLAGS $POSTGRES_INCLUDE"
+
 
 AC_ARG_WITH(
     [postgres-lib],
@@ -377,46 +482,39 @@ AC_ARG_WITH(
         [test "x$with_postgres_lib" = "xyes"],
         [with_postgres_lib=""]))
 
-if test -n "$PKG_CONFIG" && test -x "$PKG_CONFIG"; then
-    AS_IF(
-       [test -z "$with_postgres_lib"],
-       [with_postgres_lib=$($PKG_CONFIG libpq --libs-only-L | sed 's/^-L//')])
-    AC_MSG_NOTICE([using PostgreSQL libraries at $with_postgres_lib])
-    # configure insists on inserting a library search path, so give him a standard one ...
-    AC_SUBST(with_postgres_lib, "")
-    #POSTGRES_LIB="-R${with_postgres_lib}"
-    AC_SUBST(POSTGRES_LIB)
-elif test -n "$PG_CONFIG" && test -x "$PG_CONFIG"; then
-    AS_IF(
-       [test -z "$with_postgres_lib"],
-       [with_postgres_lib=$($PG_CONFIG --libdir)])
-    AC_MSG_NOTICE([using PostgreSQL libraries at $with_postgres_lib])
-    AC_SUBST(with_postgres_lib)
-    #POSTGRES_LIB="-R${with_postgres_lib}"
-    AC_SUBST(POSTGRES_LIB)
-fi
+# If no --with-postgres-lib was given, and we have pkg-config, use that.
+AS_IF(
+    [test -z "$with_postgres_lib" -a -x "$PKG_CONFIG"],
+    [with_postgres_lib=$($PKG_CONFIG libpq --libs-only-L | sed 's/^-L//')])
+
+# pg_config is deprecated, but for some users it may still provide the only
+# right answer.  For instance, `pkg-config` may not know where `libpq` is
+# installed.
+AS_IF(
+    [test -z "$with_postgres_lib" -a -x "$PG_CONFIG"],
+    [with_postgres_lib=$($PG_CONFIG --libdir)])
+
+AS_IF(
+    [test -n "$with_postgres_lib"],
+    [AC_MSG_NOTICE([using PostgreSQL libraries at $with_postgres_lib])],
+    [AC_MSG_NOTICE([using PostgreSQL libraries in default location])])
+
+AC_SUBST(with_postgres_lib)
 
 
 AC_CHECK_HEADER(
-	[${with_postgres_include}/libpq-fe.h],
+	[libpq-fe.h],
 	[],
 	[AC_MSG_ERROR([
-Can't find libpq-fe.h in ${with_postgres_include}.  Are you sure the libpq
-headers are installed correctly?  They should be in the directory returned by
-"pg_config --includedir" or "pkg-config libpq --cflags".
-
-If you do have libpq (the C-language client library for PostgreSQL) installed,
-make sure you have the related development materials--mainly its header files--
-as well as the library binary.  Some system distributions keep the two in
-seperate packages with names like "alibrary" and "alibrary-dev", respectively.
-In that case, make sure you have the latter installed as well.
+Can't find the main PostgreSQL client header, libpq-fe.h.  Are you sure the
+libpq headers are installed correctly, and that we've got the right path?
 ])])
 
 
 AC_MSG_CHECKING([for ability to compile source files using libpq])
 AC_COMPILE_IFELSE(
 	[AC_LANG_PROGRAM(
-		[[#include<${with_postgres_include}/libpq-fe.h>]],
+		[[#include<libpq-fe.h>]],
 		[[PQexec(nullptr,"")]]
 	)],
 	[],
@@ -466,7 +564,7 @@ AC_MSG_CHECKING([for PQencryptPasswordConn])
 have_pqencryptpasswordconn=yes
 AC_COMPILE_IFELSE(
 	[AC_LANG_PROGRAM(
-		[#include<${with_postgres_include}/libpq-fe.h>],
+		[#include<libpq-fe.h>],
 		[
 			extern PGconn *conn;
 			PQencryptPasswordConn(
@@ -489,7 +587,7 @@ AC_MSG_CHECKING([that type of libpq's Oid is as expected])
 AC_COMPILE_IFELSE(
 	[AC_LANG_PROGRAM(
 		[
-			#include<${with_postgres_include}/libpq-fe.h>
+			#include<libpq-fe.h>
 			#include"${srcdir}/include/pqxx/internal/libpq-forward.hxx"
 			extern void f(pqxx::oid&);
 		],
@@ -507,10 +605,10 @@ AC_PROG_MAKE_SET
 
 AC_CONFIG_FILES([
 	Makefile config/Makefile doc/Makefile doc/Doxyfile src/Makefile
-	test/Makefile test/unit/Makefile tools/Makefile include/Makefile
-	include/pqxx/Makefile libpqxx.pc])
+	test/Makefile tools/Makefile include/Makefile include/pqxx/Makefile
+	libpqxx.pc])
 
 
 AC_CONFIG_COMMANDS([configitems], ["${srcdir}/tools/splitconfig" "${srcdir}"])
 
-AC_OUTPUT
+AC_OUTPUT(compile_flags)

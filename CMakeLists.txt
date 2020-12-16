@@ -1,9 +1,13 @@
-cmake_minimum_required (VERSION 3.7)
+cmake_minimum_required(VERSION 3.7)
 
 file(READ VERSION VER_FILE_CONTENT)
 string(STRIP ${VER_FILE_CONTENT} VER_FILE_CONTENT)
 
-project(libpqxx VERSION ${VER_FILE_CONTENT} LANGUAGES CXX)
+project(
+    libpqxx
+    VERSION ${VER_FILE_CONTENT}
+    LANGUAGES CXX
+)
 
 if(NOT "${CMAKE_CXX_STANDARD}")
     set(CMAKE_CXX_STANDARD 17)
@@ -15,6 +19,8 @@ set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 # MDM Ubuntu 18.04 CMake does not directly support postgresql v12 yet, so we help it here.
 set(PostgreSQL_ADDITIONAL_VERSIONS 12)
 
+option(BUILD_DOC "Build documentation" OFF)
+
 if(NOT SKIP_BUILD_TEST)
     option(BUILD_TEST "Build all test cases" ON)
 endif()
@@ -25,33 +31,37 @@ include(config)
 
 add_subdirectory(src)
 add_subdirectory(include)
+if(BUILD_DOC)
+    add_subdirectory(doc)
+endif()
 if(BUILD_TEST)
     add_subdirectory(test)
 endif()
 
 # installation
 write_basic_package_version_file(
-	"${CMAKE_CURRENT_BINARY_DIR}/libpqxx-config-version.cmake"
-	VERSION ${PROJECT_VERSION}
-	COMPATIBILITY SameMajorVersion
+    "${CMAKE_CURRENT_BINARY_DIR}/libpqxx-config-version.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
 )
-install(FILES cmake/libpqxx-config.cmake "${CMAKE_CURRENT_BINARY_DIR}/libpqxx-config-version.cmake"
-	DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libpqxx
+install(FILES cmake/libpqxx-config.cmake
+              "${CMAKE_CURRENT_BINARY_DIR}/libpqxx-config-version.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libpqxx
 )
 install(
-	EXPORT libpqxx-targets
-	NAMESPACE libpqxx::
-	DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libpqxx
+    EXPORT libpqxx-targets
+    NAMESPACE libpqxx::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libpqxx
 )
 # Build tree export
-export(EXPORT libpqxx-targets
-	NAMESPACE libpqxx::
-	FILE ${CMAKE_CURRENT_BINARY_DIR}/libpqxx-targets.cmake
+export(
+    EXPORT libpqxx-targets
+    NAMESPACE libpqxx::
+    FILE ${CMAKE_CURRENT_BINARY_DIR}/libpqxx-targets.cmake
 )
 configure_file(
-	cmake/libpqxx-config.cmake
-	${CMAKE_CURRENT_BINARY_DIR}/libpqxx-config.cmake
-	COPYONLY
+    cmake/libpqxx-config.cmake ${CMAKE_CURRENT_BINARY_DIR}/libpqxx-config.cmake
+    COPYONLY
 )
 # Package generation
 set(CPACK_GENERATOR TGZ)

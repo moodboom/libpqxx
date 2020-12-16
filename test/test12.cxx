@@ -1,6 +1,8 @@
 #include <cstdio>
 #include <vector>
 
+#include <pqxx/transaction>
+
 #include "test_helpers.hxx"
 
 using namespace pqxx;
@@ -14,59 +16,55 @@ namespace
 void test_012()
 {
   connection conn;
-  const std::string Table = "pg_tables";
+  std::string const Table{"pg_tables"};
 
   work tx{conn, "test12"};
 
-  result R( tx.exec("SELECT * FROM " + Table) );
+  result R(tx.exec("SELECT * FROM " + Table));
 
-  const auto columns{static_cast<size_t>(R.columns())};
+  auto const columns{static_cast<std::size_t>(R.columns())};
   // Map column to no. of null fields.
   std::vector<int> NullFields(columns, 0);
   // Does column appear to be sorted?
-  std::vector<bool>
-	SortedUp(columns, true),
-	SortedDown(columns, true);
+  std::vector<bool> SortedUp(columns, true), SortedDown(columns, true);
 
-  for (auto i = R.begin(); i != R.end(); i++)
+  for (auto i{std::begin(R)}; i != std::end(R); i++)
   {
     PQXX_CHECK_EQUAL(
-	(*i).rownumber(),
-	i->rownumber(),
-	"Inconsistent row numbers for operator*() and operator->().");
+      (*i).rownumber(), i->rownumber(),
+      "Inconsistent row numbers for operator*() and operator->().");
 
     PQXX_CHECK_EQUAL(i->size(), R.columns(), "Inconsistent row size.");
 
     // Look for null fields
-    for (pqxx::row::size_type f=0; f<i->size(); ++f)
+    for (pqxx::row::size_type f{0}; f < i->size(); ++f)
     {
-      const auto offset{static_cast<size_t>(f)};
+      auto const offset{static_cast<std::size_t>(f)};
       NullFields[offset] += i.at(f).is_null();
 
       std::string A, B;
       PQXX_CHECK_EQUAL(
-	i[f].to(A),
-	i[f].to(B, std::string{}),
-	"Variants of to() disagree on nullness.");
+        i[f].to(A), i[f].to(B, std::string{}),
+        "Variants of to() disagree on nullness.");
 
       PQXX_CHECK_EQUAL(A, B, "Inconsistent field contents.");
     }
 
     // Compare fields to those of preceding row
-    if (i != R.begin())
+    if (i != std::begin(R))
     {
-      const auto j = i - 1;
+      auto const j{i - 1};
 
       // First perform some sanity checks on j vs. i and how libpqxx handles
       // their interrelationship...
       PQXX_CHECK_EQUAL(i - j, 1, "Iterator is wrong distance from successor.");
 
-      PQXX_CHECK(not (j == i), "Iterator equals its successor.");
+      PQXX_CHECK(not(j == i), "Iterator equals its successor.");
       PQXX_CHECK(j != i, "Iterator inequality is inconsistent.");
-      PQXX_CHECK(not (j >= i), "Iterator doesn't come before its successor.");
-      PQXX_CHECK(not (j > i), "Iterator is preceded by its successor.");
-      PQXX_CHECK(not (i <= j), "Iterator doesn't come after its predecessor.");
-      PQXX_CHECK(not (i < j), "Iterator is succeded by its predecessor.");
+      PQXX_CHECK(not(j >= i), "Iterator doesn't come before its successor.");
+      PQXX_CHECK(not(j > i), "Iterator is preceded by its successor.");
+      PQXX_CHECK(not(i <= j), "Iterator doesn't come after its predecessor.");
+      PQXX_CHECK(not(i < j), "Iterator is succeded by its predecessor.");
       PQXX_CHECK(j <= i, "operator<=() doesn't mirror operator>=().");
       PQXX_CHECK(j < i, "operator<() doesn't mirror operator>().");
 
@@ -90,28 +88,27 @@ void test_012()
       // fields may be sorted.  Don't do anything fancy like trying to
       // detect numbers and comparing them as such, just compare them as
       // simple strings.
-      for (pqxx::row::size_type f = 0; f < R.columns(); ++f)
+      for (pqxx::row::size_type f{0}; f < R.columns(); ++f)
       {
-        const auto offset{static_cast<size_t>(f)};
+        auto const offset{static_cast<std::size_t>(f)};
         if (not j[f].is_null())
         {
-          const bool
-		U = SortedUp[offset],
-		D = SortedDown[offset];
+          bool const U{SortedUp[offset]}, D{SortedDown[offset]};
 
-          SortedUp[offset] = U & (
-		std::string{j[f].c_str()} <= std::string{i[f].c_str()});
-          SortedDown[offset] = D & (
-		std::string{j[f].c_str()} >= std::string{i[f].c_str()});
+          SortedUp[offset] =
+            U & (std::string{j[f].c_str()} <= std::string{i[f].c_str()});
+          SortedDown[offset] =
+            D & (std::string{j[f].c_str()} >= std::string{i[f].c_str()});
         }
       }
     }
   }
 
-  for (pqxx::row::size_type f = 0; f < R.columns(); ++f)
+  // TODO: Use C++20's std::ssize().
+  for (pqxx::row::size_type f{0}; f < R.columns(); ++f)
     PQXX_CHECK(
-	NullFields[static_cast<size_t>(f)] <= int(R.size()),
-	"Found more nulls than there were rows.");
+      NullFields[static_cast<std::size_t>(f)] <= int(std::size(R)),
+      "Found more nulls than there were rows.");
 }
 
 

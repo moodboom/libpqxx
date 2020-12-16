@@ -14,7 +14,21 @@ include(CheckSymbolExists)
 include(CMakeDetermineCompileFeatures)
 include(CheckCXXSourceCompiles)
 include(CMakeFindDependencyMacro)
-find_dependency(PostgreSQL)
+
+if(NOT PostgreSQL_FOUND)
+    if(POLICY CMP0074)
+        cmake_policy(PUSH)
+        # CMP0074 is `OLD` by `cmake_minimum_required(VERSION 3.7)`,
+        # sets `NEW` to enable support CMake variable `PostgreSQL_ROOT`.
+        cmake_policy(SET CMP0074 NEW)
+    endif()
+
+    find_package(PostgreSQL REQUIRED)
+
+    if(POLICY CMP0074)
+        cmake_policy(POP)
+    endif()
+endif()
 
 check_function_exists("poll" PQXX_HAVE_POLL)
 
@@ -49,6 +63,10 @@ try_compile(
 	${PROJECT_BINARY_DIR}
 	SOURCES ${PROJECT_SOURCE_DIR}/config-tests/cxa_demangle.cxx)
 try_compile(
+	PQXX_HAVE_CONCEPTS
+	${PROJECT_BINARY_DIR}
+	SOURCES ${PROJECT_SOURCE_DIR}/config-tests/concepts.cxx)
+try_compile(
 	PQXX_HAVE_STRNLEN_S
 	${PROJECT_BINARY_DIR}
 	SOURCES ${PROJECT_SOURCE_DIR}/config-tests/strnlen_s.cxx)
@@ -64,6 +82,14 @@ try_compile(
 	PQXX_HAVE_CHARCONV_INT
 	${PROJECT_BINARY_DIR}
 	SOURCES ${PROJECT_SOURCE_DIR}/config-tests/charconv_int.cxx)
+try_compile(
+	PQXX_HAVE_VARIANT
+	${PROJECT_BINARY_DIR}
+	SOURCES ${PROJECT_SOURCE_DIR}/config-tests/variant.cxx)
+try_compile(
+	PQXX_HAVE_THREAD_LOCAL
+	${PROJECT_BINARY_DIR}
+	SOURCES ${PROJECT_SOURCE_DIR}/config-tests/thread_local.cxx)
 
 # check_cxx_source_compiles requires CMAKE_REQUIRED_DEFINITIONS to specify
 # compiling arguments.

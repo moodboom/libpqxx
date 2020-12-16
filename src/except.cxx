@@ -1,125 +1,106 @@
 /** Implementation of libpqxx exception classes.
  *
- * Copyright (c) 2000-2019, Jeroen T. Vermeulen.
+ * Copyright (c) 2000-2020, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
- * COPYING with this source code, please notify the distributor of this mistake,
- * or contact the author.
+ * COPYING with this source code, please notify the distributor of this
+ * mistake, or contact the author.
  */
 #include "pqxx-source.hxx"
 
 #include "pqxx/except"
 
 
-pqxx::failure::failure(const std::string &whatarg) :
-  std::runtime_error{whatarg}
-{
-}
+pqxx::failure::failure(std::string const &whatarg) :
+        std::runtime_error{whatarg}
+{}
 
 
 pqxx::broken_connection::broken_connection() :
-  failure{"Connection to database failed."}
-{
-}
+        failure{"Connection to database failed."}
+{}
 
 
-pqxx::broken_connection::broken_connection(const std::string &whatarg) :
-  failure{whatarg}
-{
-}
+pqxx::broken_connection::broken_connection(std::string const &whatarg) :
+        failure{whatarg}
+{}
 
 
 pqxx::sql_error::sql_error(
-	const std::string &whatarg,
-	const std::string &Q,
-	const char sqlstate[]) :
-  failure{whatarg},
-  m_query{Q},
-  m_sqlstate{sqlstate ? sqlstate : ""}
-{
-}
+  std::string const &whatarg, std::string const &Q, char const sqlstate[]) :
+        failure{whatarg}, m_query{Q}, m_sqlstate{sqlstate ? sqlstate : ""}
+{}
 
 
-pqxx::sql_error::~sql_error() noexcept
-{
-}
+pqxx::sql_error::~sql_error() noexcept = default;
 
 
-PQXX_PURE const std::string &pqxx::sql_error::query() const noexcept
+PQXX_PURE std::string const &pqxx::sql_error::query() const noexcept
 {
   return m_query;
 }
 
 
-PQXX_PURE const std::string &pqxx::sql_error::sqlstate() const noexcept
+PQXX_PURE std::string const &pqxx::sql_error::sqlstate() const noexcept
 {
   return m_sqlstate;
 }
 
 
-pqxx::in_doubt_error::in_doubt_error(const std::string &whatarg) :
-  failure{whatarg}
-{
-}
+pqxx::in_doubt_error::in_doubt_error(std::string const &whatarg) :
+        failure{whatarg}
+{}
 
 
-pqxx::transaction_rollback::transaction_rollback(const std::string &whatarg) :
-  failure{whatarg}
-{
-}
+pqxx::transaction_rollback::transaction_rollback(
+  std::string const &whatarg, std::string const &q, char const sqlstate[]) :
+        sql_error{whatarg, q, sqlstate}
+{}
 
 
 pqxx::serialization_failure::serialization_failure(
-	const std::string &whatarg) :
-  transaction_rollback{whatarg}
-{
-}
+  std::string const &whatarg, std::string const &q, char const sqlstate[]) :
+        transaction_rollback{whatarg, q, sqlstate}
+{}
 
 
 pqxx::statement_completion_unknown::statement_completion_unknown(
-	const std::string &whatarg) :
-  transaction_rollback{whatarg}
-{
-}
+  std::string const &whatarg, std::string const &q, char const sqlstate[]) :
+        transaction_rollback{whatarg, q, sqlstate}
+{}
 
 
-pqxx::deadlock_detected::deadlock_detected(const std::string &whatarg) :
-  transaction_rollback{whatarg}
-{
-}
+pqxx::deadlock_detected::deadlock_detected(
+  std::string const &whatarg, std::string const &q, char const sqlstate[]) :
+        transaction_rollback{whatarg, q, sqlstate}
+{}
 
 
-pqxx::internal_error::internal_error(const std::string &whatarg) :
-  logic_error{"libpqxx internal error: " + whatarg}
-{
-}
+pqxx::internal_error::internal_error(std::string const &whatarg) :
+        std::logic_error{"libpqxx internal error: " + whatarg}
+{}
 
 
-pqxx::usage_error::usage_error(const std::string &whatarg) :
-  logic_error{whatarg}
-{
-}
+pqxx::usage_error::usage_error(std::string const &whatarg) :
+        std::logic_error{whatarg}
+{}
 
 
-pqxx::argument_error::argument_error(const std::string &whatarg) :
-  invalid_argument{whatarg}
-{
-}
+pqxx::argument_error::argument_error(std::string const &whatarg) :
+        invalid_argument{whatarg}
+{}
 
 
-pqxx::conversion_error::conversion_error(const std::string &whatarg) :
-  domain_error{whatarg}
-{
-}
+pqxx::conversion_error::conversion_error(std::string const &whatarg) :
+        domain_error{whatarg}
+{}
 
 
-pqxx::conversion_overrun::conversion_overrun(const std::string &whatarg) :
-  conversion_error{whatarg}
-{
-}
+pqxx::conversion_overrun::conversion_overrun(std::string const &whatarg) :
+        conversion_error{whatarg}
+{}
 
 
-pqxx::range_error::range_error(const std::string &whatarg) :
-  out_of_range{whatarg}
-{
-}
+pqxx::range_error::range_error(std::string const &whatarg) :
+        out_of_range{whatarg}
+{}

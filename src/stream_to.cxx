@@ -2,26 +2,49 @@
  *
  * pqxx::stream_to enables optimized batch updates to a database table.
  *
- * Copyright (c) 2000-2019, Jeroen T. Vermeulen.
+ * Copyright (c) 2000-2020, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
- * COPYING with this source code, please notify the distributor of this mistake,
- * or contact the author.
+ * COPYING with this source code, please notify the distributor of this
+ * mistake, or contact the author.
  */
 #include "pqxx-source.hxx"
 
 #include "pqxx/stream_from.hxx"
 #include "pqxx/stream_to.hxx"
 
-#include "pqxx/internal/gates/transaction-stream_to.hxx"
+#include "pqxx/internal/gates/connection-stream_to.hxx"
 
 
-pqxx::stream_to::stream_to(
-  transaction_base &tb,
-  const std::string &table_name
-) :
-  namedclass{"stream_to", table_name},
-  internal::transactionfocus{tb}
+namespace
+{
+void begin_copy(
+  pqxx::transaction_base &trans, std::string_view table,
+  std::string const &columns)
+{
+  constexpr std::string_view copy{"COPY "}, from_stdin{" FROM STDIN"};
+  std::string query;
+  query.reserve(
+    std::size(copy) + std::size(table) + 2 + std::size(columns) +
+    std::size(from_stdin));
+
+  query += copy;
+  query += table;
+  if (not std::empty(columns))
+  {
+    query.push_back('(');
+    query += columns;
+    query.push_back(')');
+  }
+  query += from_stdin;
+
+  trans.exec0(query);
+}
+} // namespace
+
+
+pqxx::stream_to::stream_to(transaction_base &tb, std::string_view table_name) :
+        namedclass{"stream_to", table_name}, internal::transactionfocus{tb}
 {
   set_up(tb, table_name);
 }
@@ -33,48 +56,57 @@ pqxx::stream_to::~stream_to() noexcept
   {
     complete();
   }
-  catch (const std::exception &e)
+  catch (std::exception const &e)
   {
     reg_pending_error(e.what());
   }
 }
 
 
-void pqxx::stream_to::write_raw_line(std::string_view line)
+void pqxx::stream_to::write_raw_line(std::string_view text)
 {
-  internal::gate::transaction_stream_to{m_trans}.write_copy_line(line);
+  internal::gate::connection_stream_to{m_trans.conn()}.write_copy_line(text);
 }
 
 
-pqxx::stream_to & pqxx::stream_to::operator<<(stream_from &tr)
+void pqxx::stream_to::write_buffer()
 {
-  std::string line;
+  if (not std::empty(m_buffer))
+  {
+    // In append_to_buffer() we write a tab after each field.  We only want a
+    // tab _between_ fields.  Remove that last one.
+    assert(m_buffer[std::size(m_buffer) - 1] == '\t');
+    m_buffer.resize(std::size(m_buffer) - 1);
+  }
+  write_raw_line(m_buffer);
+  m_buffer.clear();
+}
+
+
+pqxx::stream_to &pqxx::stream_to::operator<<(stream_from &tr)
+{
   while (tr)
   {
-    tr.get_raw_line(line);
-    write_raw_line(line);
+    const auto [line, size] = tr.get_raw_line();
+    if (line.get() == nullptr)
+      break;
+    write_raw_line(std::string_view{line.get(), size});
   }
   return *this;
 }
 
 
-void pqxx::stream_to::set_up(
-  transaction_base &tb,
-  const std::string &table_name
-)
+void pqxx::stream_to::set_up(transaction_base &tb, std::string_view table_name)
 {
   set_up(tb, table_name, "");
 }
 
 
 void pqxx::stream_to::set_up(
-  transaction_base &tb,
-  const std::string &table_name,
-  const std::string &columns
-)
+  transaction_base &tb, std::string_view table_name,
+  std::string const &columns)
 {
-  internal::gate::transaction_stream_to{tb}.BeginCopyWrite(
-	table_name, columns);
+  begin_copy(tb, table_name, columns);
   register_me();
 }
 
@@ -85,40 +117,39 @@ void pqxx::stream_to::complete()
   {
     m_finished = true;
     unregister_me();
-    internal::gate::transaction_stream_to{m_trans}.end_copy_write();
+    internal::gate::connection_stream_to{m_trans.conn()}.end_copy_write();
   }
 }
 
 
-std::string pqxx::internal::copy_string_escape(const std::string &s)
+void pqxx::stream_to::escape_field_to_buffer(std::string_view buf)
 {
-  if (s.empty())
-    return s;
-
-  std::string escaped;
-  escaped.reserve(s.size()+1);
-
-  for (auto c : s)
+  for (auto c : buf)
+  {
     switch (c)
     {
-    case '\b': escaped += "\\b";  break; // Backspace
-    case '\f': escaped += "\\f";  break; // Vertical tab
-    case '\n': escaped += "\\n";  break; // Form feed
-    case '\r': escaped += "\\r";  break; // Newline
-    case '\t': escaped += "\\t";  break; // Tab
-    case '\v': escaped += "\\v";  break; // Carriage return
-    case '\\': escaped += "\\\\"; break; // Backslash
+    case '\b': m_buffer += "\\b"; break;  // Backspace
+    case '\f': m_buffer += "\\f"; break;  // Vertical tab
+    case '\n': m_buffer += "\\n"; break;  // Form feed
+    case '\r': m_buffer += "\\r"; break;  // Newline
+    case '\t': m_buffer += "\\t"; break;  // Tab
+    case '\v': m_buffer += "\\v"; break;  // Carriage return
+    case '\\': m_buffer += "\\\\"; break; // Backslash
     default:
       if (c < ' ' or c > '~')
       {
-        escaped += "\\";
+        // Non-ASCII.  Escape as octal number.
+        m_buffer += "\\";
+        auto u{static_cast<unsigned char>(c)};
         for (auto i = 2; i >= 0; --i)
-          escaped += number_to_digit((c >> (3*i)) & 0x07);
+          m_buffer += pqxx::internal::number_to_digit((u >> (3 * i)) & 0x07);
       }
       else
-        escaped += c;
+      {
+        m_buffer += c;
+      }
       break;
     }
-
-  return escaped;
+  }
+  m_buffer += '\t';
 }

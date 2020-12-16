@@ -2,16 +2,18 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <type_traits>
+#include <variant>
 #include <vector>
 
 #if __has_include(<string.h>)
-#include <string.h>
+#  include <string.h>
 #endif
 
 
-/* Internal helpers for string conversion.
+/* Internal helpers for string conversion, and conversion implementations.
  *
  * Do not include this header directly.  The libpqxx headers do it for you.
  */
@@ -19,14 +21,17 @@ namespace pqxx::internal
 {
 /// Convert a number in [0, 9] to its ASCII digit.
 inline constexpr char number_to_digit(int i) noexcept
-{ return static_cast<char>(i+'0'); }
+{
+  return static_cast<char>(i + '0');
+}
 
 
 /// Like strlen, but allowed to stop at @c max bytes.
-inline size_t shortcut_strlen(const char text[], [[maybe_unused]] size_t max)
+inline std::size_t
+shortcut_strlen(char const text[], [[maybe_unused]] std::size_t max)
 {
   // strnlen_s is in C11, but not (yet) in C++'s "std" namespace.
-  // But this may change, so don't qualify explicitly.
+  // This may change, so don't qualify explicitly.
   using namespace std;
 
 #if defined(PQXX_HAVE_STRNLEN_S)
@@ -49,84 +54,123 @@ inline size_t shortcut_strlen(const char text[], [[maybe_unused]] size_t max)
 /** Don't worry about the exact parameter types: the sizes will be reasonably
  * small, and nonnegative.
  */
-std::string PQXX_LIBEXPORT state_buffer_overrun(
-	int have_bytes, int need_bytes);
+std::string PQXX_LIBEXPORT
+state_buffer_overrun(int have_bytes, int need_bytes);
 
 
-template<typename HAVE, typename NEED> inline std::string
-state_buffer_overrun(HAVE have_bytes, NEED need_bytes)
+template<typename HAVE, typename NEED>
+inline std::string state_buffer_overrun(HAVE have_bytes, NEED need_bytes)
 {
   return state_buffer_overrun(
-	static_cast<int>(have_bytes),
-	static_cast<int>(need_bytes));
+    static_cast<int>(have_bytes), static_cast<int>(need_bytes));
 }
 
 
 /// Throw exception for attempt to convert null to given type.
-[[noreturn]] PQXX_LIBEXPORT void throw_null_conversion(
-	const std::string &type);
+[[noreturn]] PQXX_LIBEXPORT void
+throw_null_conversion(std::string const &type);
 
 
 template<typename T> PQXX_LIBEXPORT extern std::string to_string_float(T);
 
 
 /// Generic implementation for into_buf, on top of to_buf.
-template<typename T> inline char *
-generic_into_buf(char *begin, char *end, const T &value)
+template<typename T>
+inline char *generic_into_buf(char *begin, char *end, T const &value)
 {
-  const zview text{string_traits<T>::to_buf(begin, end, value)};
-  const auto space = check_cast<size_t>(
-	end - begin, "floating-point conversion to string");
+  zview const text{string_traits<T>::to_buf(begin, end, value)};
+  auto const space = check_cast<std::size_t>(
+    end - begin, "floating-point conversion to string");
   // Include the trailing zero.
-  const auto len = text.size() + 1;
+  auto const len = std::size(text) + 1;
   if (len > space)
     throw conversion_overrun{
-	"Not enough buffer space to insert " + type_name<T> + ".  " +
-	state_buffer_overrun(space, len)};
+      "Not enough buffer space to insert " + type_name<T> + ".  " +
+      state_buffer_overrun(space, len)};
   std::memmove(begin, text.data(), len);
   return begin + len;
 }
 
 
 /// String traits for builtin integral types (though not bool).
-template<typename T>
-struct integral_traits
+template<typename T> struct integral_traits
 {
-  /// Maximum buffer size needed to represent this type.
-  /** Includes a sign if needed; the number of base-10 digits which the type;
-   * can reliably represent; the one extra base-10 digit which the type can
-   * only partially represent; and the terminating zero.
-   */
-  static inline constexpr int buffer_budget{
-	std::is_signed_v<T> + std::numeric_limits<T>::digits10 + 1 + 1};
-
   static PQXX_LIBEXPORT T from_string(std::string_view text);
-  static PQXX_LIBEXPORT zview to_buf(char *begin, char *end, const T &value);
-  static PQXX_LIBEXPORT char *into_buf(char *begin, char *end, const T &value);
+  static PQXX_LIBEXPORT zview to_buf(char *begin, char *end, T const &value);
+  static PQXX_LIBEXPORT char *into_buf(char *begin, char *end, T const &value);
 
-  static constexpr size_t size_buffer(const T &) noexcept
-  { return buffer_budget; }
+  static constexpr std::size_t size_buffer(T const &) noexcept
+  {
+    /** Includes a sign if needed; the number of base-10 digits which the type
+     * can reliably represent; the one extra base-10 digit which the type can
+     * only partially represent; and the terminating zero.
+     */
+    return std::is_signed_v<T> + std::numeric_limits<T>::digits10 + 1 + 1;
+  }
 };
 
 
 /// String traits for builtin floating-point types.
-template<typename T>
-struct float_traits
+template<typename T> struct float_traits
 {
-  /// Maximum buffer size needed to represent this type.
-  /** Includes a sign if needed; a possible leading zero before the decimal
-   * point; the full number of base-10 digits which may be needed; a decimal
-   * point if needed; and the terminating zero.
-   */
-  static inline constexpr int buffer_budget{
-	1 + 1 + std::numeric_limits<T>::max_digits10 + 1 + 1};
-
   static PQXX_LIBEXPORT T from_string(std::string_view text);
-  static PQXX_LIBEXPORT zview to_buf(char *begin, char *end, const T &value);
-  static PQXX_LIBEXPORT char *into_buf(char *begin, char *end, const T &value);
+  static PQXX_LIBEXPORT zview to_buf(char *begin, char *end, T const &value);
+  static PQXX_LIBEXPORT char *into_buf(char *begin, char *end, T const &value);
 
-  static constexpr size_t size_buffer(const T &) noexcept
-  { return buffer_budget; }
+  // Return a nonnegative integral value's number of decimal digits.
+  static constexpr std::size_t digits10(std::size_t value) noexcept
+  {
+    if (value < 10)
+      return 1;
+    else
+      return 1 + digits10(value / 10);
+  }
+
+  static constexpr std::size_t size_buffer(T const &) noexcept
+  {
+    using lims = std::numeric_limits<T>;
+    // See #328 for a detailed discussion on the maximum number of digits.
+    //
+    // In a nutshell: for the big cases, the scientific notation is always
+    // the shortest one, and therefore the one that to_chars will pick.
+    //
+    // So... How long can the scientific notation get?  1 (for sign) + 1 (for
+    // decimal point) + 1 (for 'e') + 1 (for exponent sign) + max_digits10 +
+    // max number of digits in the exponent + 1 (terminating zero).
+    //
+    // What's the max number of digits in the exponent?  It's the max number of
+    // digits out of the most negative exponent and the most positive one.
+    //
+    // The longest positive exponent is easy: 1 + ceil(log10(max_exponent10)).
+    // (The extra 1 is because 10^n takes up 1 + n digits, not n.)
+    //
+    // The longest negative exponent is a bit harder: min_exponent10 gives us
+    // the smallest power of 10 which a normalised version of T can represent.
+    // But the smallest denormalised power of 10 that T can represent is
+    // another max_digits10 powers of 10 below that.
+    // needs a minus sign.
+    //
+    // All this stuff messes with my head a bit because it's on the order of
+    // log10(log10(n)).  It's easy to get the number of logs wrong.
+    auto const max_pos_exp{digits10(lims::max_exponent10)};
+    // Really want std::abs(lims::min_exponent10), but MSVC 2017 apparently has
+    // problems with std::abs.  So we use -lims::min_exponent10 instead.
+    auto const max_neg_exp{
+      digits10(lims::max_digits10 - lims::min_exponent10)};
+    return 1 +                                    // Sign.
+           1 +                                    // Decimal point.
+           std::numeric_limits<T>::max_digits10 + // Mantissa digits.
+           1 +                                    // Exponent "e".
+           1 +                                    // Exponent sign.
+           std::max(max_pos_exp, max_neg_exp) +   // Exponent digits.
+           1;                                     // Terminating zero.
+
+    /** Includes a sign if needed; a possible leading zero before the decimal
+     * point; the full number of base-10 digits which may be needed; a decimal
+     * point if needed; and the terminating zero.
+     */
+    return 1 + 1 + std::numeric_limits<T>::max_digits10 + 1 + 1;
+  }
 };
 } // namespace pqxx::internal
 
@@ -136,214 +180,354 @@ namespace pqxx
 /// The built-in arithmetic types do not have inherent null values.
 template<typename T>
 struct nullness<T, std::enable_if_t<std::is_arithmetic_v<T>>> : no_null<T>
-{
-};
+{};
 
 
-template<> struct string_traits<short> :
-	internal::integral_traits<short> {};
-template<> struct string_traits<unsigned short> :
-	internal::integral_traits<unsigned short> {};
-template<> struct string_traits<int> :
-	internal::integral_traits<int> {};
-template<> struct string_traits<unsigned> :
-	internal::integral_traits<unsigned> {};
-template<> struct string_traits<long> :
-	internal::integral_traits<long> {};
-template<> struct string_traits<unsigned long> :
-	internal::integral_traits<unsigned long> {};
-template<> struct string_traits<long long> :
-	internal::integral_traits<long long> {};
-template<> struct string_traits<unsigned long long> :
-	internal::integral_traits<unsigned long long> {};
-template<> struct string_traits<float> :
-	internal::float_traits<float> {};
-template<> struct string_traits<double> :
-	internal::float_traits<double> {};
-template<> struct string_traits<long double> :
-	internal::float_traits<long double> {};
+template<> struct string_traits<short> : internal::integral_traits<short>
+{};
+template<> inline constexpr bool is_unquoted_safe<short>{true};
+template<>
+struct string_traits<unsigned short>
+        : internal::integral_traits<unsigned short>
+{};
+template<> inline constexpr bool is_unquoted_safe<unsigned short>{true};
+template<> struct string_traits<int> : internal::integral_traits<int>
+{};
+template<> inline constexpr bool is_unquoted_safe<int>{true};
+template<> struct string_traits<unsigned> : internal::integral_traits<unsigned>
+{};
+template<> inline constexpr bool is_unquoted_safe<unsigned>{true};
+template<> struct string_traits<long> : internal::integral_traits<long>
+{};
+template<> inline constexpr bool is_unquoted_safe<long>{true};
+template<>
+struct string_traits<unsigned long> : internal::integral_traits<unsigned long>
+{};
+template<> inline constexpr bool is_unquoted_safe<unsigned long>{true};
+template<>
+struct string_traits<long long> : internal::integral_traits<long long>
+{};
+template<> inline constexpr bool is_unquoted_safe<long long>{true};
+template<>
+struct string_traits<unsigned long long>
+        : internal::integral_traits<unsigned long long>
+{};
+template<> inline constexpr bool is_unquoted_safe<unsigned long long>{true};
+template<> struct string_traits<float> : internal::float_traits<float>
+{};
+template<> inline constexpr bool is_unquoted_safe<float>{true};
+template<> struct string_traits<double> : internal::float_traits<double>
+{};
+template<> inline constexpr bool is_unquoted_safe<double>{true};
+template<>
+struct string_traits<long double> : internal::float_traits<long double>
+{};
+template<> inline constexpr bool is_unquoted_safe<long double>{true};
 
 
 template<> struct string_traits<bool>
 {
-  static inline constexpr int buffer_budget = 0;
-
   static PQXX_LIBEXPORT bool from_string(std::string_view text);
 
-  static constexpr zview to_buf(char *, char *, const bool &value) noexcept
-  { return value ? "true" : "false"; }
+  static constexpr zview to_buf(char *, char *, bool const &value) noexcept
+  {
+    return value ? "true"_zv : "false"_zv;
+  }
 
-  static char *into_buf(char *begin, char *end, const bool &value)
-  { return pqxx::internal::generic_into_buf(begin, end, value); }
+  static char *into_buf(char *begin, char *end, bool const &value)
+  {
+    return pqxx::internal::generic_into_buf(begin, end, value);
+  }
 
-  static constexpr size_t size_buffer(const bool &) noexcept
-  { return 6; }
+  static constexpr std::size_t size_buffer(bool const &) noexcept { return 6; }
 };
+
+
+template<> inline constexpr bool is_unquoted_safe<bool>{true};
 
 
 template<typename T> struct nullness<std::optional<T>>
 {
   static constexpr bool has_null = true;
-  static constexpr bool is_null(const std::optional<T> &v) noexcept
-	{ return ((not v.has_value()) or pqxx::is_null(*v)); }
+  /// Technically, you could have an optional of an always-null type.
+  static constexpr bool always_null = nullness<T>::always_null;
+  static constexpr bool is_null(std::optional<T> const &v) noexcept
+  {
+    return ((not v.has_value()) or pqxx::is_null(*v));
+  }
   static constexpr std::optional<T> null() { return std::optional<T>{}; }
 };
 
 
 template<typename T> struct string_traits<std::optional<T>>
 {
-  static inline constexpr int buffer_budget{string_traits<T>::buffer_budget};
-
-  static char *into_buf(char *begin, char *end, const std::optional<T> &value)
-  { return string_traits<T>::into_buf(begin, end, *value); }
-
-  zview to_buf(char *begin, char *end, const std::optional<T> &value)
+  static char *into_buf(char *begin, char *end, std::optional<T> const &value)
   {
-    if (value.has_value()) return to_buf(begin, end, *value);
-    else return zview{};
+    return string_traits<T>::into_buf(begin, end, *value);
+  }
+
+  static zview to_buf(char *begin, char *end, std::optional<T> const &value)
+  {
+    if (value.has_value())
+      return string_traits<T>::to_buf(begin, end, *value);
+    else
+      return zview{};
   }
 
   static std::optional<T> from_string(std::string_view text)
   {
     return std::optional<T>{
-	std::in_place, string_traits<T>::from_string(text)};
+      std::in_place, string_traits<T>::from_string(text)};
   }
 
-  static size_t size_buffer(const std::optional<T> &value)
-  { return string_traits<T>::size_buffer(value.value()); }
+  static std::size_t size_buffer(std::optional<T> const &value) noexcept
+  {
+    return pqxx::size_buffer(value.value());
+  }
 };
 
 
 template<typename T>
-inline T from_string(const std::stringstream &text)
-	{ return from_string<T>(text.str()); }
+inline constexpr bool is_unquoted_safe<std::optional<T>>{is_unquoted_safe<T>};
+
+
+#if defined(PQXX_HAVE_VARIANT)
+template<typename... T> struct nullness<std::variant<T...>>
+{
+  static constexpr bool has_null = (nullness<T>::has_null or ...);
+  static constexpr bool always_null = (nullness<T>::always_null and ...);
+  static constexpr bool is_null(std::variant<T...> const &value) noexcept
+  {
+    return std::visit(
+      [](auto const &i) noexcept {
+        return nullness<strip_t<decltype(i)>>::is_null(i);
+      },
+      value);
+  }
+
+  // We don't support @c null() for @c std::variant.
+  /** It would be technically possible to have a @c null in the case where just
+   * one of the types has a null, but it gets complicated and arbitrary.
+   */
+  static constexpr std::variant<T...> null() = delete;
+};
+#endif // PQXX_HAVE_VARIANT
+
+
+#if defined(PQXX_HAVE_VARIANT)
+template<typename... T> struct string_traits<std::variant<T...>>
+{
+  static char *
+  into_buf(char *begin, char *end, std::variant<T...> const &value)
+  {
+    return std::visit(
+      [begin, end](auto const &i) {
+        return string_traits<strip_t<decltype(i)>>::into_buf(begin, end, i);
+      },
+      value);
+  }
+  static zview to_buf(char *begin, char *end, std::variant<T...> const &value)
+  {
+    return std::visit(
+      [begin, end](auto const &i) {
+        return string_traits<strip_t<decltype(i)>>::to_buf(begin, end, i);
+      },
+      value);
+  }
+  static std::size_t size_buffer(std::variant<T...> const &value) noexcept
+  {
+    return std::visit(
+      [](auto const &i) noexcept { return pqxx::size_buffer(i); }, value);
+  }
+
+  /** There's no from_string for std::variant.  We could have one with a rule
+   * like "pick the first type which fits the value," but we'd have to look
+   * into how natural that API feels to users.
+   */
+  static std::variant<T...> from_string(std::string_view) = delete;
+};
+#endif // PQXX_HAVE_VARIANT
+
+
+#if defined(PQXX_HAVE_VARIANT)
+template<typename... T>
+inline constexpr bool is_unquoted_safe<std::variant<T...>>{
+  (is_unquoted_safe<T> and ...)};
+#endif // PQXX_HAVE_VARIANT
+
+
+template<typename T> inline T from_string(std::stringstream const &text)
+{
+  return from_string<T>(text.str());
+}
 
 
 template<> struct string_traits<std::nullptr_t>
 {
-  static inline constexpr int buffer_budget{0};
+  static char *into_buf(char *, char *, std::nullptr_t) = delete;
 
-  static constexpr zview to_buf(
-	char *, char *, const std::nullptr_t &
-  ) noexcept
-  { return zview{}; }
-};
-
-
-template<> struct nullness<const char *>
-{
-  static constexpr bool has_null = true;
-  static constexpr bool is_null(const char *t) noexcept
-	{ return t == nullptr; }
-  static constexpr const char *null() noexcept { return nullptr; }
-};
-
-
-/// String traits for C-style string ("pointer to const char").
-template<> struct string_traits<const char *>
-{
-  static inline constexpr int buffer_budget{-1};
-
-  static const char *from_string(std::string_view text) { return text.data(); }
-
-  static zview to_buf(char *begin, char *end, const char * const &value)
+  static constexpr zview
+  to_buf(char *, char *, std::nullptr_t const &) noexcept
   {
-    if (value == nullptr) return zview{};
-    char *const next{string_traits<const char *>::into_buf(begin, end, value)};
-    // Don't count the trailing zero, even though into_buf does.
-    return zview{begin, static_cast<size_t>(next - begin - 1)};
+    return zview{};
   }
 
-  static char *into_buf(char *begin, char *end, const char * const &value)
+  static constexpr std::size_t size_buffer() noexcept { return 0; }
+  static std::nullptr_t from_string(std::string_view) = delete;
+};
+
+
+template<> inline constexpr bool is_unquoted_safe<std::nullptr_t>{true};
+
+
+template<> struct nullness<char const *>
+{
+  static constexpr bool has_null = true;
+  static constexpr bool always_null = false;
+  static constexpr bool is_null(char const *t) noexcept
   {
-    const auto space = end - begin;
+    return t == nullptr;
+  }
+  static constexpr char const *null() noexcept { return nullptr; }
+};
+
+
+/// String traits for C-style string ("pointer to char const").
+template<> struct string_traits<char const *>
+{
+  static char const *from_string(std::string_view text) { return text.data(); }
+
+  static zview to_buf(char *begin, char *end, char const *const &value)
+  {
+    if (value == nullptr)
+      return zview{};
+    char *const next{string_traits<char const *>::into_buf(begin, end, value)};
+    // Don't count the trailing zero, even though into_buf does.
+    return zview{begin, next - begin - 1};
+  }
+
+  static char *into_buf(char *begin, char *end, char const *const &value)
+  {
+    auto const space{end - begin};
     // Count the trailing zero, even though std::strlen() and friends don't.
-    const auto len = pqxx::internal::shortcut_strlen(
-	value, static_cast<size_t>(space)
-	) + 1;
-    if (space < ptrdiff_t(len)) throw conversion_overrun{
-	"Could not copy string: buffer too small.  " +
+    auto const len{
+      pqxx::internal::shortcut_strlen(value, static_cast<std::size_t>(space)) +
+      1};
+    if (space < ptrdiff_t(len))
+      throw conversion_overrun{
+        "Could not copy string: buffer too small.  " +
         pqxx::internal::state_buffer_overrun(space, len)};
     std::memmove(begin, value, len);
     return begin + len;
   }
 
-  static size_t size_buffer(const char *const &value)
-  { return std::strlen(value) + 1; }
+  static std::size_t size_buffer(char const *const &value) noexcept
+  {
+    return std::strlen(value) + 1;
+  }
 };
 
 
 template<> struct nullness<char *>
 {
   static constexpr bool has_null = true;
-  static constexpr bool is_null(const char *t) { return t == nullptr; }
-  static constexpr const char *null() { return nullptr; }
+  static constexpr bool always_null = false;
+  static constexpr bool is_null(char const *t) noexcept
+  {
+    return t == nullptr;
+  }
+  static constexpr char const *null() { return nullptr; }
 };
 
 
 /// String traits for non-const C-style string ("pointer to char").
 template<> struct string_traits<char *>
 {
-  static inline constexpr int
-  buffer_budget{string_traits<const char *>::buffer_budget};
-  static char *into_buf(char *begin, char *end, char * const &value)
-  { return string_traits<const char *>::into_buf(begin, end, value); }
-  static zview to_buf(char *begin, char *end, char * const &value)
-  { return string_traits<const char *>::to_buf(begin, end, value); }
-  static size_t size_buffer(char *const &value)
-  { return string_traits<const char *>::size_buffer(value); }
+  static char *into_buf(char *begin, char *end, char *const &value)
+  {
+    return string_traits<char const *>::into_buf(begin, end, value);
+  }
+  static zview to_buf(char *begin, char *end, char *const &value)
+  {
+    return string_traits<char const *>::to_buf(begin, end, value);
+  }
+  static std::size_t size_buffer(char *const &value) noexcept
+  {
+    return string_traits<char const *>::size_buffer(value);
+  }
 
-  // Don't allow conversion to this type since it breaks const-safety.
+  /// Don't allow conversion to this type since it breaks const-safety.
+  static char *from_string(std::string_view) = delete;
 };
 
 
-template<size_t N> struct nullness<char[N]> : no_null<char[N]> {};
+template<std::size_t N> struct nullness<char[N]> : no_null<char[N]>
+{};
 
 
 /// String traits for C-style string constant ("array of char").
-template<size_t N> struct string_traits<char[N]>
+/** @warning This assumes that every array-of-char is a C-style string literal.
+ * So, it must include a trailing zero. and it must have static duration.
+ */
+template<std::size_t N> struct string_traits<char[N]>
 {
-// XXX: Get the terminating zero right.
-  static inline constexpr int buffer_budget{N + 1};
-  static char *into_buf(char *begin, char *end, const char (&value)[N])
-  { return string_traits<const char *>::into_buf(begin, end, value); }
-  static constexpr size_t size_buffer(const char (&)[N]) noexcept
-  { return buffer_budget; }
+  static constexpr zview
+  to_buf(char *, char *, char const (&value)[N]) noexcept
+  {
+    return zview{value, N - 1};
+  }
 
-  // Don't allow conversion to this type since it breaks const-safety.
+  static char *into_buf(char *begin, char *end, char const (&value)[N])
+  {
+    if (static_cast<std::size_t>(end - begin) < size_buffer(value))
+      throw conversion_overrun{
+        "Could not convert char[] to string: too long for buffer."};
+    std::memcpy(begin, value, N);
+    return begin + N;
+  }
+  static constexpr std::size_t size_buffer(char const (&)[N]) noexcept
+  {
+    return N;
+  }
+
+  /// Don't allow conversion to this type.
+  static void from_string(std::string_view) = delete;
 };
 
 
-template<> struct nullness<std::string> : no_null<std::string> {};
+template<> struct nullness<std::string> : no_null<std::string>
+{};
 
 
 template<> struct string_traits<std::string>
 {
-  static inline constexpr int buffer_budget{-1};
-
   static std::string from_string(std::string_view text)
-	{ return std::string{text}; }
-
-  static char *into_buf(char *begin, char *end, const std::string &value)
   {
-    if (value.size() >= std::size_t(end - begin))
-      throw conversion_overrun{
-  	"Could not convert string to string: too long for buffer."};
-    // Include the trailing zero.
-    const auto len = value.size() + 1;
-    std::memcpy(begin, value.c_str(), len);
-    return begin + len;
+    return std::string{text};
   }
 
-  static zview to_buf(char *begin, char *end, const std::string &value)
+  static char *into_buf(char *begin, char *end, std::string const &value)
+  {
+    if (std::size(value) >= std::size_t(end - begin))
+      throw conversion_overrun{
+        "Could not convert string to string: too long for buffer."};
+    // Include the trailing zero.
+    value.copy(begin, std::size(value));
+    begin[std::size(value)] = '\0';
+    return begin + std::size(value) + 1;
+  }
+
+  static zview to_buf(char *begin, char *end, std::string const &value)
   {
     char *const next = into_buf(begin, end, value);
     // Don't count the trailing zero, even though into_buf() does.
-    return zview{begin, static_cast<size_t>(next - begin - 1)};
+    return zview{begin, next - begin - 1};
   }
 
-  static size_t size_buffer(const std::string &value)
-  { return value.size() + 1; }
+  static std::size_t size_buffer(std::string const &value) noexcept
+  {
+    return std::size(value) + 1;
+  }
 };
 
 
@@ -351,332 +535,478 @@ template<> struct string_traits<std::string>
 /** I'm not sure how clear-cut this is: a @c string_view may have a null
  * data pointer, which is analogous to a null @c char pointer.
  */
-template<> struct nullness<std::string_view> : no_null<std::string_view> {};
+template<> struct nullness<std::string_view> : no_null<std::string_view>
+{};
 
 
 /// String traits for `string_view`.
 template<> struct string_traits<std::string_view>
 {
-  // Don't allow conversion to this type; it has nowhere to store its contents.
+  static constexpr std::size_t
+  size_buffer(std::string_view const &value) noexcept
+  {
+    return std::size(value) + 1;
+  }
 
-  static inline constexpr int buffer_budget{-1};
-  static constexpr size_t size_buffer(const std::string_view &value) noexcept
-  { return value.size() + 1; }
+  static char *into_buf(char *begin, char *end, std::string_view const &value)
+  {
+    if (std::size(value) >= std::size_t(end - begin))
+      throw conversion_overrun{
+        "Could not store string_view: too long for buffer."};
+    value.copy(begin, std::size(value));
+    begin[std::size(value)] = '\0';
+    return begin + std::size(value) + 1;
+  }
+
+  /// Don't convert to this type; it has nowhere to store its contents.
+  static std::string_view from_string(std::string_view) = delete;
 };
 
 
-template<> struct nullness<zview> : no_null<zview> {};
+template<> struct nullness<zview> : no_null<zview>
+{};
 
 
 /// String traits for `zview`.
 template<> struct string_traits<zview>
 {
-  // Don't allow conversion to this type; it has nowhere to store its contents.
+  static constexpr std::size_t
+  size_buffer(std::string_view const &value) noexcept
+  {
+    return std::size(value) + 1;
+  }
 
-  static inline constexpr int buffer_budget{-1};
-  static constexpr size_t size_buffer(const std::string_view &value) noexcept
-  { return value.size() + 1; }
+  static char *into_buf(char *begin, char *end, zview const &value)
+  {
+    auto const size{std::size(value)};
+    if (static_cast<std::size_t>(end - begin) <= std::size(value))
+      throw conversion_overrun{"Not enough buffer space to store this zview."};
+    value.copy(begin, size);
+    begin[size] = '\0';
+    return begin + size + 1;
+  }
+
+  static std::string_view to_buf(char *begin, char *end, zview const &value)
+  {
+    return std::string_view{into_buf(begin, end, value), std::size(value)};
+  }
+
+  /// Don't convert to this type; it has nowhere to store its contents.
+  static zview from_string(std::string_view) = delete;
 };
 
 
-template<> struct nullness<std::stringstream> : no_null<std::stringstream> {};
+template<> struct nullness<std::stringstream> : no_null<std::stringstream>
+{};
 
 
 template<> struct string_traits<std::stringstream>
 {
-  static inline constexpr int buffer_budget{-1};
+  static std::size_t size_buffer(std::stringstream const &) = delete;
+
   static std::stringstream from_string(std::string_view text)
   {
     std::stringstream stream;
-    stream.write(text.data(), std::streamsize(text.size()));
+    stream.write(text.data(), std::streamsize(std::size(text)));
     return stream;
   }
+
+  static char *into_buf(char *, char *, std::stringstream const &) = delete;
+  static std::string_view
+  to_buf(char *, char *, std::stringstream const &) = delete;
 };
 
 
 template<> struct nullness<std::nullptr_t>
 {
   static constexpr bool has_null = true;
-  static constexpr bool is_null(std::nullptr_t) noexcept { return true; }
-  static constexpr std::nullptr_t null() { return nullptr; }
+  static constexpr bool always_null = true;
+  static constexpr bool is_null(std::nullptr_t const &) noexcept
+  {
+    return true;
+  }
+  static constexpr std::nullptr_t null() noexcept { return nullptr; }
+};
+
+
+template<> struct nullness<std::nullopt_t>
+{
+  static constexpr bool has_null = true;
+  static constexpr bool always_null = true;
+  static constexpr bool is_null(std::nullopt_t const &) noexcept
+  {
+    return true;
+  }
+  static constexpr std::nullopt_t null() noexcept { return std::nullopt; }
 };
 
 
 template<typename T> struct nullness<std::unique_ptr<T>>
 {
   static constexpr bool has_null = true;
-  static constexpr bool is_null(const std::unique_ptr<T> &t) noexcept
-	{ return not t or pqxx::is_null(*t); }
-  static constexpr std::unique_ptr<T> null()
-	{ return std::unique_ptr<T>{}; }
+  static constexpr bool always_null = false;
+  static constexpr bool is_null(std::unique_ptr<T> const &t) noexcept
+  {
+    return not t or pqxx::is_null(*t);
+  }
+  static constexpr std::unique_ptr<T> null() { return std::unique_ptr<T>{}; }
 };
 
 
 template<typename T> struct string_traits<std::unique_ptr<T>>
 {
-  static inline constexpr int buffer_budget{string_traits<T>::buffer_budget};
-
   static std::unique_ptr<T> from_string(std::string_view text)
-  { return std::make_unique<T>(string_traits<T>::from_string(text)); }
-
-  static char *into_buf(
-	char *begin, char *end, const std::unique_ptr<T> &value)
-  { return string_traits<T>::into_buf(begin, end, *value); }
-
-  static zview to_buf(char *begin, char *end, const std::unique_ptr<T> &value)
   {
-    if (value) return to_buf(begin, end, *value);
-    else return zview{};
+    return std::make_unique<T>(string_traits<T>::from_string(text));
   }
 
-  static size_t size_buffer(const std::unique_ptr<T> &value)
-  { return string_traits<T>::size_buffer(*value.get()); }
+  static char *
+  into_buf(char *begin, char *end, std::unique_ptr<T> const &value)
+  {
+    return string_traits<T>::into_buf(begin, end, *value);
+  }
+
+  static zview to_buf(char *begin, char *end, std::unique_ptr<T> const &value)
+  {
+    if (value)
+      return string_traits<T>::to_buf(begin, end, *value);
+    else
+      return zview{};
+  }
+
+  static std::size_t size_buffer(std::unique_ptr<T> const &value) noexcept
+  {
+    return pqxx::size_buffer(*value.get());
+  }
 };
+
+
+template<typename T>
+inline constexpr bool is_unquoted_safe<std::unique_ptr<T>>{
+  is_unquoted_safe<T>};
 
 
 template<typename T> struct nullness<std::shared_ptr<T>>
 {
   static constexpr bool has_null = true;
-  static constexpr bool is_null(const std::shared_ptr<T> &t) noexcept
-	{ return not t or pqxx::is_null(*t); }
+  static constexpr bool always_null = false;
+  static constexpr bool is_null(std::shared_ptr<T> const &t) noexcept
+  {
+    return not t or pqxx::is_null(*t);
+  }
   static constexpr std::shared_ptr<T> null() { return std::shared_ptr<T>{}; }
 };
 
 
 template<typename T> struct string_traits<std::shared_ptr<T>>
 {
-  static inline constexpr int buffer_budget{string_traits<T>::buffer_budget};
-
   static std::shared_ptr<T> from_string(std::string_view text)
-  { return std::make_shared<T>(string_traits<T>::from_string(text)); }
+  {
+    return std::make_shared<T>(string_traits<T>::from_string(text));
+  }
 
-  static zview to_buf(char *begin, char *end, const std::shared_ptr<T> &value)
-  { return string_traits<T>::to_buf(begin, end, *value); }
-  static char *into_buf(char *begin, char *end, const std::shared_ptr<T> &value)
-  { return string_traits<T>::into_buf(begin, end, *value); }
-  static size_t size_buffer(const std::shared_ptr<T> &value)
-  { return string_traits<T>::size_buffer(*value); }
+  static zview to_buf(char *begin, char *end, std::shared_ptr<T> const &value)
+  {
+    return string_traits<T>::to_buf(begin, end, *value);
+  }
+  static char *
+  into_buf(char *begin, char *end, std::shared_ptr<T> const &value)
+  {
+    return string_traits<T>::into_buf(begin, end, *value);
+  }
+  static std::size_t size_buffer(std::shared_ptr<T> const &value) noexcept
+  {
+    return pqxx::size_buffer(*value);
+  }
 };
+
+
+template<typename T>
+inline constexpr bool is_unquoted_safe<std::shared_ptr<T>>{
+  is_unquoted_safe<T>};
+
+
+template<>
+struct nullness<std::basic_string<std::byte>>
+        : no_null<std::basic_string<std::byte>>
+{};
+
+
+template<> struct string_traits<std::basic_string<std::byte>>
+{
+  static std::size_t
+  size_buffer(std::basic_string<std::byte> const &value) noexcept
+  {
+    return internal::size_esc_bin(std::size(value));
+  }
+
+  static zview
+  to_buf(char *begin, char *end, std::basic_string<std::byte> const &value)
+  {
+    auto const value_end{into_buf(begin, end, value)};
+    return zview{begin, value_end - begin - 1};
+  }
+
+  static char *
+  into_buf(char *begin, char *end, std::basic_string<std::byte> const &value)
+  {
+    auto const budget{size_buffer(value)};
+    if (static_cast<std::size_t>(end - begin) < budget)
+      throw conversion_overrun{
+        "Not enough buffer space to escape binary data."};
+    internal::esc_bin(
+      std::string_view(
+        reinterpret_cast<char const *>(value.data()), std::size(value)),
+      begin);
+    return begin + budget;
+  }
+
+  static std::basic_string<std::byte> from_string(std::string_view text)
+  {
+    auto const size{pqxx::internal::size_unesc_bin(std::size(text))};
+    std::basic_string<std::byte> buf;
+    buf.resize(size);
+    pqxx::internal::unesc_bin(text, reinterpret_cast<std::byte *>(buf.data()));
+    return buf;
+  }
+};
+
+
+template<>
+struct nullness<std::basic_string_view<std::byte>>
+        : no_null<std::basic_string_view<std::byte>>
+{};
+
+
+template<> struct string_traits<std::basic_string_view<std::byte>>
+{
+  static std::size_t
+  size_buffer(std::basic_string_view<std::byte> const &value) noexcept
+  {
+    return internal::size_esc_bin(std::size(value));
+  }
+
+  static zview to_buf(
+    char *begin, char *end, std::basic_string_view<std::byte> const &value)
+  {
+    auto const value_end{into_buf(begin, end, value)};
+    return zview{begin, value_end - begin - 1};
+  }
+
+  static char *into_buf(
+    char *begin, char *end, std::basic_string_view<std::byte> const &value)
+  {
+    auto const budget{size_buffer(value)};
+    if (static_cast<std::size_t>(end - begin) < budget)
+      throw conversion_overrun{
+        "Not enough buffer space to escape binary data."};
+    internal::esc_bin(
+      std::string_view(
+        reinterpret_cast<char const *>(value.data()), std::size(value)),
+      begin);
+    return begin + budget;
+  }
+
+  static std::basic_string<std::byte> from_string(std::string_view text)
+  {
+    auto const size{pqxx::internal::size_unesc_bin(std::size(text))};
+    std::basic_string<std::byte> buf;
+    buf.resize(size);
+    pqxx::internal::unesc_bin(text, buf.data());
+    return buf;
+  }
+};
+
 } // namespace pqxx
 
 
 namespace pqxx::internal
 {
-/// Implementation of @c str for types for which we have @c to_buf.
-/** The second template parameter is only there to support conditional
- * specialisation.  We only take the address of @c to_buf to sabotage
- * inappropriate specialisations.
- */
-template<
-	typename T,
-	typename = std::enable_if_t<(string_traits<T>::buffer_budget >= 0)>
->
-class str_impl
+/// String traits for SQL arrays.
+template<typename Container> struct array_string_traits
 {
-public:
-  explicit str_impl(const T &value) :
-    m_view(
-      string_traits<T>::to_buf(
-        m_buf.data(), m_buf.data() + m_buf.size(), value)
-    )
-  {}
-
-  constexpr zview view() const noexcept { return m_view; }
-  constexpr const char *c_str() const noexcept { return m_view.data(); }
-
-private:
-  std::array<char, string_traits<T>::buffer_budget> m_buf;
-  zview m_view;
-};
-
-
-template<> class str_impl<std::string, void>
-{
-public:
-  explicit str_impl(const std::string &value) : m_str{value} {}
-  explicit str_impl(std::string &&value) : m_str{std::move(value)} {}
-
-  zview view() const noexcept { return zview(m_str); }
-  const char *c_str() const noexcept { return m_str.c_str(); }
-
-private:
-  std::string m_str;
-};
-
-
-template<typename T>
-class str_impl<
-	T,
-	std::enable_if_t<
-		not std::is_same_v<T, std::string> and
-		(string_traits<T>::buffer_budget < 0)
-	>
->
-{
-public:
-  explicit str_impl(const T &value) : m_str{to_string(value)} {}
-
-  zview view() const noexcept { return zview(m_str); }
-  const char *c_str() const noexcept { return m_str.c_str(); }
-
-private:
-  std::string m_str;
-};
-
-/// Inline char arrays up to this size inside a @c str.
-constexpr std::size_t string_stack_threshold = 100;
-
-
-/// Store a small char array.  @warn This assumes a terminating zero!
-template<std::size_t N>
-class str_impl<char[N], std::enable_if_t<(N < string_stack_threshold)>>
-{
-public:
-  explicit str_impl(const char (&text)[N]) noexcept
-  { std::memcpy(m_buf, text, N); }
-
-  zview view() const noexcept
+  static zview to_buf(char *begin, char *end, Container const &value)
   {
-    // This is where we assume a terminating zero.  The string_view is one byte
-    // less than the size of the array, even though the c_str() may well be the
-    // full length of the array.
-    return zview{m_buf, N - 1};
+    auto const stop{into_buf(begin, end, value)};
+    return zview{begin, stop - begin - 1};
   }
-  const char *c_str() const noexcept { return m_buf; }
+
+  static char *into_buf(char *begin, char *end, Container const &value)
+  {
+    std::size_t const budget{size_buffer(value)};
+    if (static_cast<std::size_t>(end - begin) < budget)
+      throw conversion_overrun{
+        "Not enough buffer space to convert array to string."};
+
+    char *here = begin;
+    *here++ = '{';
+
+    bool nonempty{false};
+    for (auto const &elt : value)
+    {
+      if (is_null(elt))
+      {
+        s_null.copy(here, std::size(s_null));
+        here += std::size(s_null);
+      }
+      else if constexpr (is_sql_array<elt_type>)
+      {
+        // Render nested array in-place.  Then erase the trailing zero.
+        here = string_traits<elt_type>::into_buf(here, end, elt) - 1;
+      }
+      else if constexpr (is_unquoted_safe<elt_type>)
+      {
+        // No need to quote or escape.  Just convert the value straight into
+        // its place in the array, and "backspace" the trailing zero.
+        here = string_traits<elt_type>::into_buf(here, end, elt) - 1;
+      }
+      else
+      {
+        *here++ = '"';
+
+        // Use the tail end of the destination buffer as an intermediate
+        // buffer.
+        auto const elt_budget{pqxx::size_buffer(elt)};
+        for (char const c :
+             string_traits<elt_type>::to_buf(end - elt_budget, end, elt))
+        {
+          if (c == '\\' or c == '"')
+            *here++ = '\\';
+          *here++ = c;
+        }
+        *here++ = '"';
+      }
+      *here++ = array_separator<elt_type>;
+      nonempty = true;
+    }
+
+    // Erase that last comma, if present.
+    if (nonempty)
+      here--;
+
+    *here++ = '}';
+    *here++ = '\0';
+
+    return here;
+  }
+
+  static std::size_t size_buffer(Container const &value) noexcept
+  {
+    using elt_traits = string_traits<elt_type>;
+
+    if constexpr (is_unquoted_safe<elt_type>)
+      return 3 + std::accumulate(
+                   std::begin(value), std::end(value), std::size_t{},
+                   [](std::size_t acc, elt_type const &elt) {
+                     return acc +
+                            (pqxx::is_null(elt) ?
+                               std::size(s_null) :
+                               elt_traits::size_buffer(elt)) -
+                            1;
+                   });
+    else
+      return 3 + std::accumulate(
+                   std::begin(value), std::end(value), std::size_t{},
+                   [](std::size_t acc, elt_type const &elt) {
+                     // Opening and closing quotes, plus worst-case escaping,
+                     // but don't count the trailing zeroes.
+                     std::size_t const elt_size{
+                       pqxx::is_null(elt) ? std::size(s_null) :
+                                            elt_traits::size_buffer(elt) - 1};
+                     return acc + 2 * elt_size + 2;
+                   });
+  }
+
+  // We don't yet support parsing of array types using from_string.  Doing so
+  // would require a reference to the connection.
 
 private:
-  char m_buf[N];
-};
+  using elt_type = strip_t<decltype(*std::begin(std::declval<Container>()))>;
 
-
-/// Store a large char array.
-/** The version of str_impl for larger char arrays stores its data on the heap,
- * to avoid a single large string using up all of the thread's stack space.
- *
- * @warn This assumes a terminating zero!
- */
-template<std::size_t N>
-class str_impl<char[N], std::enable_if_t<(N >= string_stack_threshold)>>
-{
-public:
-  explicit str_impl(const char (&text)[N]) noexcept : m_str{text} {}
-
-  zview view() const noexcept { return zview(m_str); }
-  const char *c_str() const noexcept { return m_str.c_str(); }
-
-private:
-  std::string m_str;
-};
-
-
-template<> class str_impl<const char *, void>
-{
-public:
-  explicit str_impl(const char value[]) : m_str{value} {}
-
-  zview view() const noexcept { return zview(m_str); }
-  const char *c_str() const noexcept { return m_str.c_str(); }
-
-private:
-  std::string m_str;
-};
-
-
-template<> class str_impl<char *, void> : public str<const char *>
-{
-public:
-  explicit str_impl(const char value[]) : str<const char *>{value}
-  {}
-};
-
-
-#if !defined(PQXX_HAVE_CHARCONV_FLOAT)
-/// Optimised @c str for environments without floating-point charconv.
-/** If the language implementation does not provide charconv for floating-point
- * types, we convert floating-point values to strings using a costly little
- * dance around @c std::stringstream, which naturally produces a
- * @c std::string, not something more lightweight like @c string_view.
- *
- * The real drama is that the @c to_buf implementation in this situation is
- * more expensive than converting to @c std::string.  So, we have a dedicated
- * @c str implementation built on top of a @c string.
- */
-template<> class str_impl<float, void>
-{
-public:
-  explicit str_impl(float value) : m_str{internal::to_string_float(value)} {}
-
-  zview view() const noexcept { return zview(m_str); }
-  const char *c_str() const noexcept { return m_str.c_str(); }
-
-private:
-  std::string m_str;
-};
-#endif
-
-
-template<typename T> class str_impl<std::optional<T>, void> : public str<T>
-{
-public:
-  explicit str_impl(const std::optional<T> &value) : str<T>{*value} {}
-};
-
-
-template<typename T> class str_impl<std::unique_ptr<T>, void> : public str<T>
-{
-public:
-  explicit str_impl(const std::unique_ptr<T> &value) : str<T>{*value} {}
-};
-
-
-template<typename T> class str_impl<std::shared_ptr<T>, void> : public str<T>
-{
-public:
-  explicit str_impl(const std::shared_ptr<T> &value) : str<T>{*value} {}
+  static constexpr zview s_null{"NULL"};
 };
 } // namespace pqxx::internal
 
 
 namespace pqxx
 {
-template<typename T> inline std::string to_string(const T &value)
+template<typename T> struct nullness<std::vector<T>> : no_null<std::vector<T>>
+{};
+
+
+template<typename T>
+struct string_traits<std::vector<T>>
+        : internal::array_string_traits<std::vector<T>>
+{};
+
+
+template<typename T> inline constexpr bool is_sql_array<std::vector<T>>{true};
+
+
+template<typename T, std::size_t N>
+struct nullness<std::array<T, N>> : no_null<std::array<T, N>>
+{};
+
+
+template<typename T, std::size_t N>
+struct string_traits<std::array<T, N>>
+        : internal::array_string_traits<std::array<T, N>>
+{};
+
+
+template<typename T, std::size_t N>
+inline constexpr bool is_sql_array<std::array<T, N>>{true};
+} // namespace pqxx
+
+
+namespace pqxx
+{
+template<typename T> inline std::string to_string(T const &value)
 {
   if (is_null(value))
     throw conversion_error{
-	"Attempt to convert null " + type_name<T> + " to a string."};
+      "Attempt to convert null " + type_name<T> + " to a string."};
 
   std::string buf;
   // We can't just reserve() data; modifying the terminating zero leads to
   // undefined behaviour.
-  buf.resize(string_traits<T>::size_buffer(value) + 1);
-  const auto end{
-	string_traits<T>::into_buf(buf.data(), buf.data() + buf.size(), value)};
-  buf.resize(static_cast<size_t>(end - buf.data() - 1));
+  buf.resize(size_buffer(value));
+  auto const end{string_traits<T>::into_buf(
+    buf.data(), buf.data() + std::size(buf), value)};
+  buf.resize(static_cast<std::size_t>(end - buf.data() - 1));
   return buf;
 }
 
 
-template<> inline std::string to_string(const float &value)
-	{ return internal::to_string_float(value); }
-template<> inline std::string to_string(const double &value)
-	{ return internal::to_string_float(value); }
-template<> inline std::string to_string(const long double &value)
-	{ return internal::to_string_float(value); }
-template<> inline std::string to_string(const std::stringstream &value)
-{ return value.str(); }
+template<> inline std::string to_string(float const &value)
+{
+  return internal::to_string_float(value);
+}
+template<> inline std::string to_string(double const &value)
+{
+  return internal::to_string_float(value);
+}
+template<> inline std::string to_string(long double const &value)
+{
+  return internal::to_string_float(value);
+}
+template<> inline std::string to_string(std::stringstream const &value)
+{
+  return value.str();
+}
 
 
-template<typename T> inline void into_string(const T &value, std::string &out)
+template<typename T> inline void into_string(T const &value, std::string &out)
 {
   if (is_null(value))
     throw conversion_error{
-	"Attempt to convert null " + type_name<T> + " to a string."};
+      "Attempt to convert null " + type_name<T> + " to a string."};
 
   // We can't just reserve() data; modifying the terminating zero leads to
   // undefined behaviour.
-  out.resize(string_traits<T>::size_buffer(value) + 1);
-  const auto end{
-	string_traits<T>::into_buf(out.data(), out.data() + out.size(), value)};
-  out.resize(static_cast<size_t>(end - out.data() - 1));
+  out.resize(size_buffer(value) + 1);
+  auto const end{string_traits<T>::into_buf(
+    out.data(), out.data() + std::size(out), value)};
+  out.resize(static_cast<std::size_t>(end - out.data() - 1));
 }
 } // namespace pqxx

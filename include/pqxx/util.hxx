@@ -2,11 +2,11 @@
  *
  * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/util instead.
  *
- * Copyright (c) 2000-2019, Jeroen T. Vermeulen.
+ * Copyright (c) 2000-2020, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
- * COPYING with this source code, please notify the distributor of this mistake,
- * or contact the author.
+ * COPYING with this source code, please notify the distributor of this
+ * mistake, or contact the author.
  */
 #ifndef PQXX_H_UTIL
 #define PQXX_H_UTIL
@@ -14,9 +14,10 @@
 #include "pqxx/compiler-public.hxx"
 #include "pqxx/internal/compiler-internal-pre.hxx"
 
-#include <cstdio>
 #include <cctype>
+#include <cstdio>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -26,12 +27,14 @@
 #include <vector>
 
 #include "pqxx/except.hxx"
+#include "pqxx/internal/encodings.hxx"
 #include "pqxx/types.hxx"
 #include "pqxx/version.hxx"
 
 
 /// The home of all libpqxx classes, functions, templates, etc.
-namespace pqxx {}
+namespace pqxx
+{}
 
 #include <pqxx/internal/libpq-forward.hxx>
 
@@ -39,7 +42,7 @@ namespace pqxx {}
 namespace pqxx
 {
 /// Suppress compiler warning about an unused item.
-template<typename T> inline void ignore_unused(T &&) {}
+template<typename... T> inline void ignore_unused(T &&...) {}
 
 
 /// Cast a numeric value to another type, or throw if it underflows/overflows.
@@ -47,7 +50,7 @@ template<typename T> inline void ignore_unused(T &&) {}
  * or both floating-point types.
  */
 template<typename TO, typename FROM>
-inline TO check_cast(FROM value, const char description[])
+inline TO check_cast(FROM value, char const description[])
 {
   static_assert(std::is_arithmetic_v<FROM>);
   static_assert(std::is_arithmetic_v<TO>);
@@ -68,9 +71,8 @@ inline TO check_cast(FROM value, const char description[])
   {
     if constexpr (std::is_signed_v<TO>)
     {
-      if (value < (to_limits::min)())
-        throw range_error(
-		std::string{"Cast underflow: "} + description);
+      if (value < to_limits::lowest())
+        throw range_error(std::string{"Cast underflow: "} + description);
     }
     else
     {
@@ -79,8 +81,8 @@ inline TO check_cast(FROM value, const char description[])
       // perform our check.
       if (value < 0)
         throw range_error(
-		std::string{"Casting negative value to unsigned type: "} +
-		description);
+          std::string{"Casting negative value to unsigned type: "} +
+          description);
     }
   }
   else
@@ -93,8 +95,8 @@ inline TO check_cast(FROM value, const char description[])
   {
     using unsigned_from = std::make_unsigned_t<FROM>;
     using unsigned_to = std::make_unsigned_t<TO>;
-    constexpr auto from_max = static_cast<unsigned_from>((from_limits::max)());
-    constexpr auto to_max = static_cast<unsigned_to>((to_limits::max)());
+    constexpr auto from_max{static_cast<unsigned_from>((from_limits::max)())};
+    constexpr auto to_max{static_cast<unsigned_to>((to_limits::max)())};
     if constexpr (from_max > to_max)
     {
       if (static_cast<unsigned_from>(value) > to_max)
@@ -109,6 +111,13 @@ inline TO check_cast(FROM value, const char description[])
 
   return static_cast<TO>(value);
 }
+
+
+/// Remove any constness, volatile, and reference-ness from a type.
+/** @deprecated In C++20 we'll replace this with std::remove_cvref.
+ */
+template<typename TYPE>
+using strip_t = std::remove_cv_t<std::remove_reference_t<TYPE>>;
 
 
 /** Check library version at link time.
@@ -144,7 +153,7 @@ inline PQXX_PRIVATE void check_version()
   // often for performance reasons.  A local static variable is initialised
   // only on the definition's first execution.  Compilers will be well
   // optimised for this behaviour, so there's a minimal one-time cost.
-  static const auto version_ok = internal::PQXX_VERSION_CHECK();
+  static auto const version_ok{internal::PQXX_VERSION_CHECK()};
   ignore_unused(version_ok);
 }
 
@@ -155,16 +164,16 @@ inline PQXX_PRIVATE void check_version()
 struct PQXX_LIBEXPORT thread_safety_model
 {
   /// Is the underlying libpq build thread-safe?
-  bool safe_libpq;
+  bool safe_libpq = false;
 
   /// Is Kerberos thread-safe?
   /** @warning Is currently always @c false.
    *
-   * If your application uses Kerberos, all accesses to libpqxx or Kerberos must
-   * be serialized.  Confine their use to a single thread, or protect it with a
-   * global lock.
+   * If your application uses Kerberos, all accesses to libpqxx or Kerberos
+   * must be serialized.  Confine their use to a single thread, or protect it
+   * with a global lock.
    */
-  bool safe_kerberos;
+  bool safe_kerberos = false;
 
   /// A human-readable description of any thread-safety issues.
   std::string description;
@@ -172,130 +181,11 @@ struct PQXX_LIBEXPORT thread_safety_model
 
 
 /// Describe thread safety available in this build.
-PQXX_LIBEXPORT thread_safety_model describe_thread_safety();
+[[nodiscard]] PQXX_LIBEXPORT thread_safety_model describe_thread_safety();
 
 
 /// The "null" oid.
-constexpr oid oid_none = 0;
-} // namespace pqxx
-
-
-// Include this late, so strconv can also include ignore_unused from here.
-#include "pqxx/strconv.hxx"
-
-
-namespace pqxx
-{
-/**
- * @defgroup utility Utility functions
- */
-//@{
-
-/// Represent sequence of values as a string, joined by a given separator.
-/**
- * Use this to turn e.g. the numbers 1, 2, and 3 into a string "1, 2, 3".
- *
- * @param sep separator string (to be placed between items)
- * @param begin beginning of items sequence
- * @param end end of items sequence
- * @param access functor defining how to dereference sequence elements
- */
-template<typename ITER, typename ACCESS> inline std::string
-separated_list(std::string_view sep, ITER begin, ITER end, ACCESS access)
-{
-  std::string result;
-// TODO: Can we pre-compute optimal length for result?
-  if (begin != end)
-  {
-    result = to_string(access(begin));
-    for (++begin; begin != end; ++begin)
-    {
-      result += sep;
-      result += to_string(access(begin));
-    }
-  }
-  return result;
-}
-
-
-/// Render sequence as a string, using given separator between items.
-template<typename ITER> inline std::string
-separated_list(std::string_view sep, ITER begin, ITER end)
-	{ return separated_list(sep, begin, end, [](ITER i){ return *i; }); }
-
-
-/// Render items in a container as a string, using given separator.
-template<typename CONTAINER> inline auto
-separated_list(std::string_view sep, const CONTAINER &c)
-	/*
-	Always std::string; necessary because SFINAE doesn't work with the
-	contents of function bodies, so the check for iterability has to be in
-	the signature.
-	*/
-	-> typename std::enable_if<
-		(
-			not std::is_void<decltype(std::begin(c))>::value
-			and not std::is_void<decltype(std::end(c))>::value
-		),
-		std::string
-	>::type
-{
-  return separated_list(sep, std::begin(c), std::end(c));
-}
-
-
-/// Render items in a tuple as a string, using given separator.
-template<
-	typename TUPLE,
-	std::size_t INDEX=0,
-	typename ACCESS,
-	typename std::enable_if<
-		(INDEX == std::tuple_size<TUPLE>::value-1),
-		int
-	>::type=0
->
-inline std::string
-separated_list(
-	std::string_view /* sep */,
-	const TUPLE &t,
-	const ACCESS& access
-)
-{
-  return to_string(access(&std::get<INDEX>(t)));
-}
-
-template<
-	typename TUPLE,
-	std::size_t INDEX=0,
-	typename ACCESS,
-	typename std::enable_if<
-		(INDEX < std::tuple_size<TUPLE>::value-1),
-		int
-	>::type=0
->
-inline std::string
-separated_list(std::string_view sep, const TUPLE &t, const ACCESS& access)
-{
-  std::string out{to_string(access(&std::get<INDEX>(t)))};
-  out.append(sep);
-  out.append(separated_list<TUPLE, INDEX+1>(sep, t, access));
-  return out;
-}
-
-template<
-	typename TUPLE,
-	std::size_t INDEX=0,
-	typename std::enable_if<
-		(INDEX <= std::tuple_size<TUPLE>::value),
-		int
-	>::type=0
->
-inline std::string
-separated_list(std::string_view sep, const TUPLE &t)
-{
-  return separated_list(sep, t, [](const TUPLE &tup){return *tup;});
-}
-//@}
+constexpr oid oid_none{0};
 } // namespace pqxx
 
 
@@ -311,21 +201,9 @@ separated_list(std::string_view sep, const TUPLE &t)
  */
 namespace pqxx::internal
 {
-PQXX_LIBEXPORT void freepqmem(const void *) noexcept;
-template<typename P> inline void freepqmem_templated(P *p) noexcept
-{
-  freepqmem(p);
-}
-
-PQXX_LIBEXPORT void freemallocmem(const void *) noexcept;
-template<typename P> inline void freemallocmem_templated(P *p) noexcept
-{
-  freemallocmem(p);
-}
-
-
 /// Helper base class: object descriptions for error messages and such.
-/**
+/** @deprecated To be replaced with something simpler, cleaner, and faster.
+ *
  * Classes derived from namedclass have a class name (such as "transaction"),
  * an optional object name (such as "delete-old-logs"), and a description
  * generated from the two names (such as "transaction delete-old-logs").
@@ -340,24 +218,25 @@ template<typename P> inline void freemallocmem_templated(P *p) noexcept
 class PQXX_LIBEXPORT namedclass
 {
 public:
-  explicit namedclass(const std::string &Classname) :
-    m_classname{Classname},
-    m_name{}
-  {
-  }
+  explicit namedclass(std::string_view classname) : m_classname{classname} {}
 
-  namedclass(const std::string &Classname, const std::string &Name) :
-    m_classname{Classname},
-    m_name{Name}
-  {
-  }
+  namedclass(std::string_view classname, std::string_view name) :
+          m_classname{classname}, m_name{name}
+  {}
+
+  namedclass(std::string_view classname, char const name[]) :
+          m_classname{classname}, m_name{name}
+  {}
+
+  namedclass(std::string_view classname, std::string &&name) :
+          m_classname{classname}, m_name{std::move(name)}
+  {}
 
   /// Object name, or the empty string if no name was given.
-  const std::string &name() const noexcept { return m_name; }
+  std::string const &name() const noexcept { return m_name; }
 
   /// Class name.
-  const std::string &classname() const noexcept
-	{ return m_classname; }
+  std::string const &classname() const noexcept { return m_classname; }
 
   /// Combination of class name and object name; or just class name.
   std::string description() const;
@@ -368,23 +247,25 @@ private:
 
 
 PQXX_PRIVATE void check_unique_registration(
-        const namedclass *new_ptr, const namedclass *old_ptr);
+  namedclass const *new_ptr, namedclass const *old_ptr);
 PQXX_PRIVATE void check_unique_unregistration(
-        const namedclass *new_ptr, const namedclass *old_ptr);
+  namedclass const *new_ptr, namedclass const *old_ptr);
 
 
 /// Ensure proper opening/closing of GUEST objects related to a "host" object
 /** Only a single GUEST may exist for a single host at any given time.  GUEST
  * must be derived from namedclass.
  */
-template<typename GUEST>
-class unique
+template<typename GUEST> class unique
 {
 public:
-  constexpr unique() =default;
-  constexpr unique(const unique &) =delete;
-  constexpr unique(unique &&rhs) : m_guest(rhs.m_guest) { rhs.m_guest = nullptr; }
-  constexpr unique &operator=(const unique &) =delete;
+  constexpr unique() = default;
+  constexpr unique(unique const &) = delete;
+  constexpr unique(unique &&rhs) : m_guest(rhs.m_guest)
+  {
+    rhs.m_guest = nullptr;
+  }
+  constexpr unique &operator=(unique const &) = delete;
   constexpr unique &operator=(unique &&rhs)
   {
     m_guest = rhs.m_guest;
@@ -411,11 +292,46 @@ private:
 };
 
 
-/// Sleep for the given number of seconds
-/** May return early, e.g. when interrupted by a signal.  Completes instantly if
- * a zero or negative sleep time is requested.
+/// Compute buffer size needed to escape binary data for use as a BYTEA.
+/** This uses the hex-escaping format.  The return value includes room for the
+ * "\x" prefix.
  */
-PQXX_LIBEXPORT void sleep_seconds(int);
+constexpr std::size_t size_esc_bin(std::size_t binary_bytes) noexcept
+{
+  return 2 + (2 * binary_bytes) + 1;
+}
+
+
+/// Compute binary size from the size of its escaped version.
+/** Do not include a terminating zero in @c escaped_bytes.
+ */
+constexpr std::size_t size_unesc_bin(std::size_t escaped_bytes) noexcept
+{
+  return (escaped_bytes - 2) / 2;
+}
+
+
+/// Hex-escape binary data into a buffer.
+/** The buffer must be able to accommodate
+ * @c size_esc_bin(std::size(binary_data)) bytes, and the function will write
+ * exactly that number of bytes into the buffer.  This includes a trailing
+ * zero.
+ */
+void PQXX_LIBEXPORT
+esc_bin(std::string_view binary_data, char buffer[]) noexcept;
+
+
+/// Hex-escape binary data into a std::string.
+std::string PQXX_LIBEXPORT esc_bin(std::string_view binary_data);
+
+
+/// Reconstitute binary data from its escaped version.
+void PQXX_LIBEXPORT
+unesc_bin(std::string_view escaped_data, std::byte buffer[]);
+
+
+/// Reconstitute binary data from its escaped version.
+std::string PQXX_LIBEXPORT unesc_bin(std::string_view escaped_data);
 } // namespace pqxx::internal
 
 #include "pqxx/internal/compiler-internal-post.hxx"

@@ -17,9 +17,7 @@ doc/html/Reference/*.js
 doc/html/Reference/*.png
 doc/html/Reference/*.map
 doc/html/Reference/*.md5
-doc/html/Tutorial
 doc/reference-stamp
-doc/tutorial-stamp
 include/pqxx/config-*-*.h
 include/pqxx/config.h
 include/pqxx/stamp-h1
@@ -37,7 +35,9 @@ win32/common
 **/*.la
 **/*.lo
 **/*.o
+**/*.out
 **/.*.swp
+**/.swp
 **/*.tmp
 **/.deps
 **/.libs

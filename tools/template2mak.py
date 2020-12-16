@@ -13,7 +13,7 @@ The available template commands are:
     use `###FILENAME###` to get the full filename.
 
 
-Copyright (c) 2006-2019, Bart Samwel and Jeroen T. Vermeulen.
+Copyright (c) 2006-2020, Bart Samwel and Jeroen T. Vermeulen.
 """
 
 from __future__ import (
@@ -171,7 +171,7 @@ def write_header(stream, template_path=None):
     """
     Write header to stream.
     """
-    hr = ("#" * 80) + "\n"
+    hr = ('# ' + '#' * 78) + "\n"
     script = os.path.basename(argv[0])
 
     outstream.write(hr)

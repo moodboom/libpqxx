@@ -1,3 +1,5 @@
+#include <pqxx/transaction>
+
 #include "test_helpers.hxx"
 
 using namespace pqxx;
@@ -19,18 +21,17 @@ void test_002()
   // connection type, where a failure to connect results in an immediate
   // exception rather than a silent retry.
   PQXX_CHECK_THROWS_EXCEPTION(
-        bad_connect(),
-	"Invalid connection string did not cause exception.");
+    bad_connect(), "Invalid connection string did not cause exception.");
 
   // Set up connection to database
-  std::string ConnectString = "";
+  std::string ConnectString;
   connection C{ConnectString};
 
-  // Start transaction within context of connection
+  // Start transaction within context of connection.
   work T{C, "test2"};
 
-  // Perform query within transaction
-  result R( T.exec("SELECT * FROM pg_tables") );
+  // Perform query within transaction.
+  result R(T.exec("SELECT * FROM pg_tables"));
 
   // Let's keep the database waiting as briefly as possible: commit now,
   // before we start processing results.  We could do this later, or since
@@ -40,40 +41,33 @@ void test_002()
 
   // Ah, this version of postgres will tell you which table a column in a
   // result came from.  Let's just test that functionality...
-  const oid rtable = R.column_table(0);
+  oid const rtable{R.column_table(0)};
   PQXX_CHECK_EQUAL(
-	rtable,
-	R.column_table(pqxx::row::size_type(0)),
-	"Inconsistent answers from column_table()");
+    rtable, R.column_table(pqxx::row::size_type(0)),
+    "Inconsistent answers from column_table()");
 
-  const std::string rcol = R.column_name(0);
-  const oid crtable = R.column_table(rcol);
+  std::string const rcol{R.column_name(0)};
+  oid const crtable{R.column_table(rcol)};
   PQXX_CHECK_EQUAL(
-	crtable,
-	rtable,
-	"Field looked up by name gives different origin.");
+    crtable, rtable, "Field looked up by name gives different origin.");
 
   // Now we've got all that settled, let's process our results.
-  for (result::size_type i = 0; i < R.size(); ++i)
+  for (auto const &f : R)
   {
-    const oid ftable = R[i][0].table();
+    oid const ftable{f[0].table()};
     PQXX_CHECK_EQUAL(ftable, rtable, "field::table() is broken.");
 
-    const oid ttable = R[i].column_table(0);
+    oid const ttable{f.column_table(0)};
 
     PQXX_CHECK_EQUAL(
-	ttable,
-	R[i].column_table(pqxx::row::size_type(0)),
-	"Inconsistent pqxx::row::column_table().");
+      ttable, f.column_table(pqxx::row::size_type(0)),
+      "Inconsistent pqxx::row::column_table().");
 
     PQXX_CHECK_EQUAL(ttable, rtable, "Inconsistent result::column_table().");
 
-    const oid cttable = R[i].column_table(rcol);
+    oid const cttable{f.column_table(rcol)};
 
-    PQXX_CHECK_EQUAL(
-	cttable,
-	rtable,
-	"pqxx::row::column_table() is broken.");
+    PQXX_CHECK_EQUAL(cttable, rtable, "pqxx::row::column_table() is broken.");
   }
 }
 

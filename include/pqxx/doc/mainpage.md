@@ -1,7 +1,7 @@
 libpqxx                                      {#mainpage}
 =======
 
-@version 7.0.0
+@version 7.2.2
 @author Jeroen T. Vermeulen
 @see http://pqxx.org
 @see https://github.com/jtv/libpqxx
@@ -25,3 +25,4 @@ Some links that should help you find your bearings:
 * @ref escaping
 * @ref performance
 * @ref transactor
+* @ref datatypes

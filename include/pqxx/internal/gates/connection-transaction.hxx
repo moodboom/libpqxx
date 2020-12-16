@@ -13,26 +13,30 @@ class PQXX_PRIVATE connection_transaction : callgate<connection>
 
   connection_transaction(reference x) : super(x) {}
 
-  result exec(const char query[]) { return home().exec(query); }
-  void register_transaction(transaction_base *t)
-	{ home().register_transaction(t); }
-  void unregister_transaction(transaction_base *t) noexcept
-	{ home().unregister_transaction(t); }
+  template<typename STRING> result exec(STRING query)
+  {
+    return home().exec(query);
+  }
 
-  bool read_copy_line(std::string &line)
-	{ return home().read_copy_line(line); }
-  void write_copy_line(std::string_view line)
-	{ home().write_copy_line(line); }
+  void register_transaction(transaction_base *t)
+  {
+    home().register_transaction(t);
+  }
+  void unregister_transaction(transaction_base *t) noexcept
+  {
+    home().unregister_transaction(t);
+  }
+
+  auto read_copy_line() { return home().read_copy_line(); }
+  void write_copy_line(std::string_view line) { home().write_copy_line(line); }
   void end_copy_write() { home().end_copy_write(); }
 
-  result exec_prepared(
-	const std::string &statement,
-	const internal::params &args)
+  result exec_prepared(zview statement, internal::params const &args)
   {
     return home().exec_prepared(statement, args);
   }
 
-  result exec_params(const std::string &query, const internal::params &args)
+  result exec_params(std::string const &query, internal::params const &args)
   {
     return home().exec_params(query, args);
   }

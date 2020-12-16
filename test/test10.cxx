@@ -2,6 +2,8 @@
 #include <iostream>
 #include <vector>
 
+#include <pqxx/nontransaction>
+
 #include "test_helpers.hxx"
 
 using namespace pqxx;
@@ -13,36 +15,27 @@ using namespace pqxx;
 namespace
 {
 // Let's take a boring year that is not going to be in the "pqxxevents" table
-const int BoringYear = 1977;
+constexpr int BoringYear{1977};
 
-const std::string Table("pqxxevents");
+std::string const Table("pqxxevents");
 
 
 // Count events, and boring events, in table
-std::pair<int,int> CountEvents(transaction_base &T)
+std::pair<int, int> CountEvents(transaction_base &T)
 {
-  const std::string EventsQuery = "SELECT count(*) FROM " + Table;
-  const std::string BoringQuery =
-	EventsQuery + " WHERE year=" + to_string(BoringYear);
-  int EventsCount = 0,
-      BoringCount = 0;
-
-  row R( T.exec1(EventsQuery) );
-  R.front().to(EventsCount);
-
-  R = T.exec1(BoringQuery);
-  R.front().to(BoringCount);
-
-  return std::make_pair(EventsCount, BoringCount);
+  std::string const events_query{"SELECT count(*) FROM " + Table};
+  std::string const boring_query{
+    events_query + " WHERE year=" + to_string(BoringYear)};
+  return std::make_pair(
+    T.query_value<int>(events_query), T.query_value<int>(boring_query));
 }
-
 
 
 // Try adding a record, then aborting it, and check whether the abort was
 // performed correctly.
-void Test(connection_base &C, bool ExplicitAbort)
+void Test(connection &C, bool ExplicitAbort)
 {
-  std::pair<int,int> EventCounts;
+  std::pair<int, int> EventCounts;
 
   // First run our doomed transaction.  This will refuse to run if an event
   // exists for our Boring Year.
@@ -55,29 +48,26 @@ void Test(connection_base &C, bool ExplicitAbort)
     EventCounts = CountEvents(Doomed);
 
     PQXX_CHECK_EQUAL(
-	EventCounts.second,
-	0,
-	"Can't run, boring year is already in table.");
+      EventCounts.second, 0, "Can't run, boring year is already in table.");
 
     // Now let's try to introduce a row for our Boring Year
     Doomed.exec0(
-	"INSERT INTO " + Table + "(year, event) "
-        "VALUES (" + to_string(BoringYear) + ", 'yawn')");
+      "INSERT INTO " + Table +
+      "(year, event) "
+      "VALUES (" +
+      to_string(BoringYear) + ", 'yawn')");
 
-    const auto Recount = CountEvents(Doomed);
+    auto const Recount{CountEvents(Doomed)};
     PQXX_CHECK_EQUAL(
-	Recount.second,
-	 1,
-	 "Wrong # events for " + to_string(BoringYear));
+      Recount.second, 1, "Wrong # events for " + to_string(BoringYear));
 
     PQXX_CHECK_EQUAL(
-	Recount.first,
-	EventCounts.first + 1,
-	"Number of events changed.");
+      Recount.first, EventCounts.first + 1, "Number of events changed.");
 
     // Okay, we've added an entry but we don't really want to.  Abort it
     // explicitly if requested, or simply let the Transaction object "expire."
-    if (ExplicitAbort) Doomed.abort();
+    if (ExplicitAbort)
+      Doomed.abort();
 
     // If now explicit abort requested, Doomed Transaction still ends here
   }
@@ -87,18 +77,16 @@ void Test(connection_base &C, bool ExplicitAbort)
   // transactions.
   work Checkup(C, "Checkup");
 
-  const auto NewEvents = CountEvents(Checkup);
+  auto const NewEvents{CountEvents(Checkup)};
   PQXX_CHECK_EQUAL(
-	NewEvents.first,
-	EventCounts.first,
-	"Number of events changed.  This may be due to a bug in libpqxx, "
-	"or the test table was modified by some other process.");
+    NewEvents.first, EventCounts.first,
+    "Number of events changed.  This may be due to a bug in libpqxx, "
+    "or the test table was modified by some other process.");
 
   PQXX_CHECK_EQUAL(
-	NewEvents.second,
-	0,
-	"Found unexpected events.  This may be due to a bug in libpqxx, "
-	"or the test table was modified by some other process.");
+    NewEvents.second, 0,
+    "Found unexpected events.  This may be due to a bug in libpqxx, "
+    "or the test table was modified by some other process.");
 }
 
 
@@ -107,7 +95,7 @@ void test_abort()
   connection conn;
   nontransaction t{conn};
   test::create_pqxxevents(t);
-  connection_base &c(t.conn());
+  connection &c(t.conn());
   t.commit();
   Test(c, true);
   Test(c, false);

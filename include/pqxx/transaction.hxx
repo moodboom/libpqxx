@@ -3,11 +3,11 @@
  *
  * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/transaction instead.
  *
- * Copyright (c) 2000-2019, Jeroen T. Vermeulen.
+ * Copyright (c) 2000-2020, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
- * COPYING with this source code, please notify the distributor of this mistake,
- * or contact the author.
+ * COPYING with this source code, please notify the distributor of this
+ * mistake, or contact the author.
  */
 #ifndef PQXX_H_TRANSACTION
 #define PQXX_H_TRANSACTION
@@ -23,7 +23,8 @@ namespace pqxx::internal
 class PQXX_LIBEXPORT basic_transaction : public dbtransaction
 {
 protected:
-  basic_transaction(connection &C, const char begin_command[]);
+  basic_transaction(connection &c, char const begin_command[]);
+
 private:
   virtual void do_commit() override;
   virtual void do_abort() override;
@@ -49,10 +50,10 @@ namespace pqxx
  * work T(C);
  * try
  * {
- *   T.exec("UPDATE employees SET wage=wage*2");
+ *   T.exec0("UPDATE employees SET wage=wage*2");
  *   T.commit();	// NOTE: do this inside try block
  * }
- * catch (const exception &e)
+ * catch (exception const &e)
  * {
  *   cerr << e.what() << endl;
  *   T.abort();		// Usually not needed; same happens when T's life ends.
@@ -60,27 +61,26 @@ namespace pqxx
  * @endcode
  */
 template<
-	isolation_level ISOLATION=isolation_level::read_committed,
-	write_policy READWRITE=write_policy::read_write>
+  isolation_level ISOLATION = isolation_level::read_committed,
+  write_policy READWRITE = write_policy::read_write>
 class transaction final : public internal::basic_transaction
 {
 public:
   /// Create a transaction.
   /**
-   * @param C Connection for this transaction to operate on.
-   * @param TName Optional name for transaction.  Must begin with a letter and
+   * @param c Connection for this transaction to operate on.
+   * @param tname Optional name for transaction.  Must begin with a letter and
    * may contain letters and digits only.
    */
-  explicit transaction(connection &C, const std::string &TName):
-    namedclass{"transaction", TName},
-    internal::basic_transaction(
-	C, internal::begin_cmd<ISOLATION, READWRITE>.c_str())
-    {}
+  explicit transaction(connection &c, std::string const &tname) :
+          namedclass{"transaction", tname},
+          internal::basic_transaction(
+            c, internal::begin_cmd<ISOLATION, READWRITE>.c_str())
+  {}
 
-  explicit transaction(connection &C) : transaction(C, "") {}
+  explicit transaction(connection &c) : transaction(c, "") {}
 
-  virtual ~transaction() noexcept
-	{ close(); }
+  virtual ~transaction() noexcept override { close(); }
 };
 
 
@@ -88,10 +88,8 @@ public:
 using work = transaction<>;
 
 /// Read-only transaction.
-using read_transaction = transaction<
-	isolation_level::read_committed,
-	write_policy::read_only
->;
+using read_transaction =
+  transaction<isolation_level::read_committed, write_policy::read_only>;
 
 //@}
 } // namespace pqxx

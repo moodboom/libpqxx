@@ -1,3 +1,9 @@
+#include <chrono>
+#include <thread>
+
+#include <pqxx/nontransaction>
+#include <pqxx/notification>
+
 #include "../test_helpers.hxx"
 
 namespace
@@ -8,15 +14,14 @@ public:
   std::string payload;
   int backend_pid;
 
-  TestReceiver(pqxx::connection_base &c, const std::string &channel_name) :
-    pqxx::notification_receiver(c, channel_name),
-    payload(),
-    backend_pid(0)
-  {
-  }
+  TestReceiver(pqxx::connection &c, std::string const &channel_name) :
+          pqxx::notification_receiver(c, channel_name),
+          payload(),
+          backend_pid(0)
+  {}
 
-  virtual void operator()(const std::string &payload_string, int backend)
-	override
+  virtual void
+  operator()(std::string const &payload_string, int backend) override
   {
     this->payload = payload_string;
     this->backend_pid = backend;
@@ -25,14 +30,14 @@ public:
 
 
 void test_receive(
-	pqxx::transaction_base &t,
-	const std::string &channel,
-	const char payload[] = nullptr)
+  pqxx::transaction_base &t, std::string const &channel,
+  char const payload[] = nullptr)
 {
-  pqxx::connection_base &conn(t.conn());
+  pqxx::connection &conn(t.conn());
 
-  std::string SQL = "NOTIFY \"" + channel + "\"";
-  if (payload) SQL += ", " + t.quote(payload);
+  std::string SQL{"NOTIFY \"" + channel + "\""};
+  if (payload != nullptr)
+    SQL += ", " + t.quote(payload);
 
   TestReceiver receiver{t.conn(), channel};
 
@@ -44,17 +49,17 @@ void test_receive(
   t.exec(SQL);
   t.commit();
 
-  int notifs = 0;
-  for (
-	int i = 0;
-	(i < 10) and (notifs == 0);
-	++i, pqxx::internal::sleep_seconds(1))
+  int notifs{0};
+  for (int i{0}; (i < 10) and (notifs == 0);
+       ++i, std::this_thread::sleep_for(std::chrono::seconds(i)))
     notifs = conn.get_notifs();
 
   PQXX_CHECK_EQUAL(notifs, 1, "Got wrong number of notifications.");
   PQXX_CHECK_EQUAL(receiver.backend_pid, conn.backendpid(), "Bad pid.");
-  if (payload) PQXX_CHECK_EQUAL(receiver.payload, payload, "Bad payload.");
-  else PQXX_CHECK(receiver.payload.empty(), "Unexpected payload.");
+  if (payload == nullptr)
+    PQXX_CHECK(std::empty(receiver.payload), "Unexpected payload.");
+  else
+    PQXX_CHECK_EQUAL(receiver.payload, payload, "Bad payload.");
 }
 
 

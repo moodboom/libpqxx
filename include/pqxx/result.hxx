@@ -4,11 +4,11 @@
  *
  * DO NOT INCLUDE THIS FILE DIRECTLY; include pqxx/result instead.
  *
- * Copyright (c) 2000-2019, Jeroen T. Vermeulen.
+ * Copyright (c) 2000-2020, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
- * COPYING with this source code, please notify the distributor of this mistake,
- * or contact the author.
+ * COPYING with this source code, please notify the distributor of this
+ * mistake, or contact the author.
  */
 #ifndef PQXX_H_RESULT
 #define PQXX_H_RESULT
@@ -23,13 +23,14 @@
 #include "pqxx/except.hxx"
 #include "pqxx/types.hxx"
 #include "pqxx/util.hxx"
+#include "pqxx/zview.hxx"
 
 #include "pqxx/internal/encodings.hxx"
 
 
 namespace pqxx::internal
 {
-PQXX_LIBEXPORT void clear_result(const pq::PGresult *);
+PQXX_LIBEXPORT void clear_result(pq::PGresult const *);
 }
 
 
@@ -37,9 +38,10 @@ namespace pqxx::internal::gate
 {
 class result_connection;
 class result_creation;
+class result_pipeline;
 class result_row;
 class result_sql_cursor;
-} // namespace internal::gate
+} // namespace pqxx::internal::gate
 
 
 namespace pqxx
@@ -51,7 +53,7 @@ namespace pqxx
  * number:
  *
  * @code
- *	for (result::size_type i=0; i < R.size(); ++i) Process(R[i]);
+ *	for (result::size_type i=0; i < std::size(R); ++i) Process(R[i]);
  * @endcode
  *
  * Result sets in libpqxx are lightweight, reference-counted wrapper objects
@@ -78,151 +80,171 @@ public:
   using reverse_iterator = const_reverse_iterator;
 
   result() noexcept :
-      m_data(make_data_pointer()),
-      m_query(),
-      m_encoding(internal::encoding_group::MONOBYTE)
-    {}
-  result(const result &rhs) noexcept =default;
+          m_data(make_data_pointer()),
+          m_query(),
+          m_encoding(internal::encoding_group::MONOBYTE)
+  {}
+  result(result const &rhs) noexcept = default;
 
-  result &operator=(const result &rhs) noexcept =default;
+  result &operator=(result const &rhs) noexcept = default;
 
   /**
    * @name Comparisons
    */
   //@{
-  bool operator==(const result &) const noexcept;
-  bool operator!=(const result &rhs) const noexcept
-	{ return not operator==(rhs); }
+  [[nodiscard]] bool operator==(result const &) const noexcept;
+  [[nodiscard]] bool operator!=(result const &rhs) const noexcept
+  {
+    return not operator==(rhs);
+  }
   //@}
 
-  const_reverse_iterator rbegin() const;
-  const_reverse_iterator crbegin() const;
-  const_reverse_iterator rend() const;
-  const_reverse_iterator crend() const;
+  /// Iterate rows, reading them directly into a tuple of "TYPE...".
+  /** Converts the fields to values of the given respective types.
+   *
+   * Use this only with a ranged "for" loop.  The iteration produces
+   * std::tuple<TYPE...> which you can "unpack" to a series of @c auto
+   * variables.
+   */
+  template<typename... TYPE> auto iter() const;
 
-  const_iterator begin() const noexcept;
-  const_iterator cbegin() const noexcept;
-  inline const_iterator end() const noexcept;
-  inline const_iterator cend() const noexcept;
+  [[nodiscard]] const_reverse_iterator rbegin() const;
+  [[nodiscard]] const_reverse_iterator crbegin() const;
+  [[nodiscard]] const_reverse_iterator rend() const;
+  [[nodiscard]] const_reverse_iterator crend() const;
 
-  reference front() const noexcept;
-  reference back() const noexcept;
+  [[nodiscard]] const_iterator begin() const noexcept;
+  [[nodiscard]] const_iterator cbegin() const noexcept;
+  [[nodiscard]] inline const_iterator end() const noexcept;
+  [[nodiscard]] inline const_iterator cend() const noexcept;
 
-  PQXX_PURE size_type size() const noexcept;
-  PQXX_PURE bool empty() const noexcept;
-  size_type capacity() const noexcept { return size(); }
+  [[nodiscard]] reference front() const noexcept;
+  [[nodiscard]] reference back() const noexcept;
+
+  [[nodiscard]] PQXX_PURE size_type size() const noexcept;
+  [[nodiscard]] PQXX_PURE bool empty() const noexcept;
+  [[nodiscard]] size_type capacity() const noexcept { return size(); }
 
   void swap(result &) noexcept;
 
-  row operator[](size_type i) const noexcept;
+  [[nodiscard]] row operator[](size_type i) const noexcept;
   row at(size_type) const;
 
-  void clear() noexcept { m_data.reset(); m_query = nullptr; }
+  void clear() noexcept
+  {
+    m_data.reset();
+    m_query = nullptr;
+  }
 
   /**
    * @name Column information
    */
   //@{
   /// Number of columns in result.
-  PQXX_PURE row_size_type columns() const noexcept;
+  [[nodiscard]] PQXX_PURE row_size_type columns() const noexcept;
 
   /// Number of given column (throws exception if it doesn't exist).
-  row_size_type column_number(const char ColName[]) const;
-
-  /// Number of given column (throws exception if it doesn't exist).
-  row_size_type column_number(const std::string &Name) const
-	{return column_number(Name.c_str());}
+  [[nodiscard]] row_size_type column_number(zview name) const;
 
   /// Name of column with this number (throws exception if it doesn't exist)
-  const char *column_name(row_size_type Number) const;
+  [[nodiscard]] char const *column_name(row_size_type number) const;
 
   /// Return column's type, as an OID from the system catalogue.
-  oid column_type(row_size_type ColNum) const;
+  [[nodiscard]] oid column_type(row_size_type col_num) const;
 
   /// Return column's type, as an OID from the system catalogue.
-  template<typename STRING>
-  oid column_type(STRING ColName) const
-	{ return column_type(column_number(ColName)); }
+  [[nodiscard]] oid column_type(zview col_name) const
+  {
+    return column_type(column_number(col_name));
+  }
 
   /// What table did this column come from?
-  oid column_table(row_size_type ColNum) const;
+  [[nodiscard]] oid column_table(row_size_type col_num) const;
 
   /// What table did this column come from?
-  template<typename STRING>
-  oid column_table(STRING ColName) const
-	{ return column_table(column_number(ColName)); }
+  [[nodiscard]] oid column_table(zview col_name) const
+  {
+    return column_table(column_number(col_name));
+  }
 
   /// What column in its table did this column come from?
-  row_size_type table_column(row_size_type ColNum) const;
+  [[nodiscard]] row_size_type table_column(row_size_type col_num) const;
 
   /// What column in its table did this column come from?
-  template<typename STRING>
-  row_size_type table_column(STRING ColName) const
-	{ return table_column(column_number(ColName)); }
+  [[nodiscard]] row_size_type table_column(zview col_name) const
+  {
+    return table_column(column_number(col_name));
+  }
   //@}
 
   /// Query that produced this result, if available (empty string otherwise)
-  PQXX_PURE const std::string &query() const noexcept;
+  [[nodiscard]] PQXX_PURE std::string const &query() const noexcept;
 
   /// If command was @c INSERT of 1 row, return oid of inserted row
   /** @return Identifier of inserted row if exactly one row was inserted, or
    * oid_none otherwise.
    */
-  PQXX_PURE oid inserted_oid() const;
+  [[nodiscard]] PQXX_PURE oid inserted_oid() const;
 
-  /// If command was @c INSERT, @c UPDATE, or @c DELETE: number of affected rows
+  /// If command was @c INSERT, @c UPDATE, or @c DELETE: number of affected
+  /// rows
   /** @return Number of affected rows if last command was @c INSERT, @c UPDATE,
    * or @c DELETE; zero for all other commands.
    */
-  PQXX_PURE size_type affected_rows() const;
+  [[nodiscard]] PQXX_PURE size_type affected_rows() const;
 
 
 private:
-  using data_pointer = std::shared_ptr<const internal::pq::PGresult>;
+  using data_pointer = std::shared_ptr<internal::pq::PGresult const>;
 
   /// Underlying libpq result set.
-   data_pointer m_data;
+  data_pointer m_data;
 
   /// Factory for data_pointer.
-  static data_pointer make_data_pointer(
-	const internal::pq::PGresult *res=nullptr)
-	{ return data_pointer{res, internal::clear_result}; }
+  static data_pointer
+  make_data_pointer(internal::pq::PGresult const *res = nullptr)
+  {
+    return data_pointer{res, internal::clear_result};
+  }
+
+  friend class pqxx::internal::gate::result_pipeline;
+  PQXX_PURE std::shared_ptr<std::string> query_ptr() const noexcept
+  {
+    return m_query;
+  }
 
   /// Query string.
   std::shared_ptr<std::string> m_query;
 
   internal::encoding_group m_encoding;
 
-  static const std::string s_empty_string;
+  static std::string const s_empty_string;
 
   friend class pqxx::field;
-  PQXX_PURE const char * GetValue(size_type Row, row_size_type Col) const;
-  PQXX_PURE bool get_is_null(size_type Row, row_size_type Col) const;
-  PQXX_PURE field_size_type get_length(
-	size_type,
-	row_size_type) const noexcept;
+  PQXX_PURE char const *get_value(size_type row, row_size_type col) const;
+  PQXX_PURE bool get_is_null(size_type row, row_size_type col) const;
+  PQXX_PURE
+  field_size_type get_length(size_type, row_size_type) const noexcept;
 
   friend class pqxx::internal::gate::result_creation;
   result(
-        internal::pq::PGresult *rhs,
-        const std::string &Query,
-        internal::encoding_group enc);
+    internal::pq::PGresult *rhs, std::shared_ptr<std::string> query,
+    internal::encoding_group enc);
 
   PQXX_PRIVATE void check_status() const;
 
   friend class pqxx::internal::gate::result_connection;
   friend class pqxx::internal::gate::result_row;
-  bool operator!() const noexcept { return not m_data.get(); }
+  bool operator!() const noexcept { return m_data.get() == nullptr; }
   operator bool() const noexcept { return m_data.get() != nullptr; }
 
-  [[noreturn]] PQXX_PRIVATE void ThrowSQLError(
-	const std::string &Err,
-	const std::string &Query) const;
+  [[noreturn]] PQXX_PRIVATE void
+  ThrowSQLError(std::string const &Err, std::string const &Query) const;
   PQXX_PRIVATE PQXX_PURE int errorposition() const;
   PQXX_PRIVATE std::string StatusError() const;
 
   friend class pqxx::internal::gate::result_sql_cursor;
-  PQXX_PURE const char *cmd_status() const noexcept;
+  PQXX_PURE char const *cmd_status() const noexcept;
 };
 } // namespace pqxx
 

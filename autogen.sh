@@ -18,12 +18,6 @@ substitute() {
 		"$1"
 }
 
-# Generate Windows makefiles.
-# Add carriage returns to turn them into MS-DOS format.
-makewinmake() {
-	./tools/template2mak.py "$1" | tr -d '\r' | sed -e 's/$/\r/' >"$2"
-}
-
 
 # Use templating system to generate various Makefiles.
 expand_templates() {
@@ -46,3 +40,5 @@ libtoolize --force --automake --copy
 aclocal -I . -I config/m4
 automake --add-missing --copy
 autoconf
+
+echo "Done."

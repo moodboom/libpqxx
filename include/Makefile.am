@@ -4,8 +4,7 @@ nobase_include_HEADERS= pqxx/pqxx \
 	pqxx/array pqxx/array.hxx \
 	pqxx/binarystring pqxx/binarystring.hxx \
 	pqxx/compiler-public.hxx \
-	pqxx/internal/compiler-internal-pre.hxx \
-	pqxx/internal/compiler-internal-post.hxx \
+	pqxx/composite pqxx/composite.hxx \
 	pqxx/connection pqxx/connection.hxx \
 	pqxx/cursor pqxx/cursor.hxx \
 	pqxx/dbtransaction pqxx/dbtransaction.hxx \
@@ -21,6 +20,7 @@ nobase_include_HEADERS= pqxx/pqxx \
 	pqxx/result pqxx/result.hxx \
 	pqxx/result_iterator.hxx \
 	pqxx/robusttransaction pqxx/robusttransaction.hxx \
+	pqxx/separated_list pqxx/separated_list.hxx \
 	pqxx/strconv pqxx/strconv.hxx \
 	pqxx/stream_from pqxx/stream_from.hxx \
 	pqxx/stream_to pqxx/stream_to.hxx \
@@ -31,14 +31,23 @@ nobase_include_HEADERS= pqxx/pqxx \
 	pqxx/row pqxx/row.hxx \
 	pqxx/util pqxx/util.hxx \
 	pqxx/types pqxx/types.hxx \
+	pqxx/zview pqxx/zview.hxx \
 	pqxx/version pqxx/version.hxx \
+	pqxx/internal/array-composite.hxx \
 	pqxx/internal/callgate.hxx \
+	pqxx/internal/compiler-internal-pre.hxx \
+	pqxx/internal/compiler-internal-post.hxx \
 	pqxx/internal/conversions.hxx \
 	pqxx/internal/encoding_group.hxx \
 	pqxx/internal/encodings.hxx \
+	pqxx/internal/ignore-deprecated-post.hxx \
+	pqxx/internal/ignore-deprecated-pre.hxx \
 	pqxx/internal/libpq-forward.hxx \
+	pqxx/internal/result_iter.hxx \
 	pqxx/internal/sql_cursor.hxx \
 	pqxx/internal/statement_parameters.hxx \
+	pqxx/internal/stream_iterator.hxx \
+	pqxx/internal/transaction_focus.hxx \
 	pqxx/internal/gates/connection-errorhandler.hxx \
 	pqxx/internal/gates/connection-largeobject.hxx \
 	pqxx/internal/gates/connection-notification_receiver.hxx \
@@ -50,14 +59,10 @@ nobase_include_HEADERS= pqxx/pqxx \
 	pqxx/internal/gates/icursor_iterator-icursorstream.hxx \
 	pqxx/internal/gates/result-connection.hxx \
 	pqxx/internal/gates/result-creation.hxx \
-	pqxx/internal/gates/result-row.hxx \
+	pqxx/internal/gates/result-pipeline.hxx \
 	pqxx/internal/gates/result-sql_cursor.hxx \
 	pqxx/internal/gates/transaction-sql_cursor.hxx \
-	pqxx/internal/gates/transaction-stream_from.hxx \
-	pqxx/internal/gates/transaction-stream_to.hxx \
-	pqxx/internal/gates/transaction-transactionfocus.hxx \
-	pqxx/internal/ignore-deprecated-pre.hxx \
-	pqxx/internal/ignore-deprecated-post.hxx
+	pqxx/internal/gates/transaction-transactionfocus.hxx
 
 
 nobase_nodist_include_HEADERS = \

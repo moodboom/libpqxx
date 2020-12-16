@@ -1,6 +1,6 @@
 /* Basic type aliases and forward declarations.
  *
- * Copyright (c) 2000-2019, Jeroen T. Vermeulen
+ * Copyright (c) 2000-2020, Jeroen T. Vermeulen
  *
  * See COPYING for copyright license.  If you did not receive a file called
  * COPYING with this source code, please notify the distributor of this
@@ -27,7 +27,7 @@ using row_size_type = int;
 using row_difference_type = int;
 
 /// Number of bytes in a field of database data.
-using field_size_type = size_t;
+using field_size_type = std::size_t;
 
 /// Number of bytes in a large object.
 using large_object_size_type = int64_t;
@@ -50,6 +50,14 @@ class result;
 class row;
 class stream_from;
 class transaction_base;
+
+/// Marker for @c stream_from constructors: "stream from table."
+struct from_table_t
+{};
+
+/// Marker for @c stream_from constructors: "stream from query."
+struct from_query_t
+{};
 } // namespace pqxx
 
 #endif

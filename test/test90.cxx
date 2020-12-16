@@ -1,3 +1,5 @@
+#include <pqxx/connection>
+
 #include "test_helpers.hxx"
 
 // Test program for libpqxx.  Test adorn_name.
@@ -9,12 +11,11 @@ void test_090()
   pqxx::connection conn;
 
   // Test connection's adorn_name() function for uniqueness
-  const std::string nametest = "basename";
+  std::string const nametest{"basename"};
 
   PQXX_CHECK_NOT_EQUAL(
-	conn.adorn_name(nametest),
-	conn.adorn_name(nametest),
-	"\"Unique\" names are not unique.");
+    conn.adorn_name(nametest), conn.adorn_name(nametest),
+    "\"Unique\" names are not unique.");
 }
 } // namespace
 

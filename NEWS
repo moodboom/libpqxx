@@ -1,3 +1,111 @@
+7.2.2
+ - Implicit `zview` constructor from `char const *`. (#389)
+ - Missing `<array>` include in connection.cxx.
+7.2.1
+ - Fix infinite loop in converting `char *` to string. (#377)
+ - Deprecated `namedclass`.
+ - Convert an entire row using `row::as<type...>()`.
+ - Internal rework of `field::to()` and `field::as()` functions.
+ - Some more warning options in maintainer mode.
+ - Removed the old, DocBook-based tutorial.
+ - Fixed wrong `query` and SQLSTATE params to some exceptions. (#378)
+7.2.0
+ - You can now implicitly convert a `const std::string &` to `zview`.
+ - Replaced some overloads for C strings and C++ strings with `zview`.
+ - Deprecating `binarystring`.  Use `std::basic_string<std::byte>` instead!
+ - Array parser did not recognise escaping in unquoted values.
+ - gcc10 test build fix: a result iterator is not the same thing as a `row`.
+ - Doc fix: field size does _not_ include terminating zero.  (#356)
+ - Fix error message in `demangle_type_name`: printed result, not raw name.
+ - Fix compile warning in `demangle_type_name` on GNU systems.
+ - Document that string conversions assume non-null values.
+ - Start playing with C++20 _concepts._
+ - Sketch out concepts-based `PQconnectdbParams` support.  (#343)
+ - Add missing link to "datatypes" documentation.  (#346)
+ - Supports `to_string`, `stream_to`, etc. for `binarystring`.  (#312)
+ - Fixed infinite recursion when using `std::optional` in `stream_to`.  (#364)
+ - Home-rolled hex-escaping.  Saves an allocation.
+ - Catch floating-point negative overflow in `check_cast`, not underflow.
+ - Bit more work on CMake build doc. (#318)
+ - Typo in `datatypes.md`: `nullness`, not `nullness_traits`. (#353)
+ - Fixed test names map in `tests/runner.cxx`. (#354)
+ - Integral `from_string` now accept leading whitespace, as in composite types.
+ - Experimental support basics for composite types.  (#355)
+ - Use `stream_from` without knowing the number of fields.  (#357)
+ - Global `size_buffer` function.
+ - `quote()` now works for always-null types without conversions defined.
+ - `std::nullopt` now converts to an SQL null.
+ - Skip quoting and escaping array/composite fields of "safe" types.
+ - New type trait: `is_unquoted_safe`.
+ - Forbid invalid specialisations of `query_value`.
+ - Fixed `mktemp` invocation that broke on FreeBSD.
+ - Avoid unneeded encode/decode step on more binary data.
+ - If `__cxa_demangle` fails, fall back on raw type name.  (#361)
+7.1.2
+ - Document build in `BUILDING-configure.md` / `BUILDING-cmake.md`.
+ - Work around silly clang warning in `test_errorhandler.cxx`.
+ - Fix install error with some internal headers. (#322)
+ - Fix "No object selected" error message in large objects.  (#324)
+ - If error has no SQLSTATE, throw `broken_connection`. (#280)
+ - Fix argument order in `encrypt_password`. (#333, #334)
+ - Fix underestimate of buffer size for `to_string` for floats. (#328)
+7.1.1
+ - Compile fix for Visual Studio.
+ - Warning fix for clang.
+ - Also install `transaction_focus.hxx`. (#320)
+7.1.0
+ - Query tuples straight into `std::tuple` using `transaction::stream()`!
+ - And, `stream_from` now supports more or less arbitrary queries.
+ - Instead of a tuple of fields, you can pass `stream_to` a container as well.
+ - `string_traits::size_buffer()` must now be `noexcept`.
+ - New `nullness` member: `always_null`.
+ - There is now `to_buf` support for string literals.
+ - Streaming data is now more efficient.
+ - The table name in `stream_from` is now escaped.
+ - You can now "convert" strings to `std::string_view`.  Mind your lifetimes!
+ - A `std::variant` will now convert to string, if its member types do.
+ - If a `stream_from` row fails to convert, you can no longer retry it.
+ - `from_string(field const &)` now handles null values properly.
+ - Obsolete Windows build docs are gone.
+ - Added `row::to(std::tuple<...>)`.
+ - Unified the test suites.  We no longer need `test/unit/unit_runner`.
+ - New helper: `strip_t<...>` to remove a type's constness and reference.
+ - Replace custom templating with CMake glob in `src/CMakeLists.txt`.
+ - Replace custom templating with CMake glob in `doc/CMakeLists.txt`.
+ - Replace custom templating with CMake glob in `test/unit/CMakeLists.txt`.
+7.0.8
+ - Inline `type_name` in `PQXX_DECLARE_ENUM_CONVERSION`.
+7.0.7
+ - Fix broken `--with-postgres-lib` option in `configure` script (#311)
+ - Should now build even if neither `pkg-config` nor `pg_config` is available.
+ - CMake accepts `PostgreSQL_ROOT`, if it's a sufficiently recent version.
+7.0.6
+ - Prefer `pg_config` over `pkg-config` for include path (#291).
+ - Try to plod on if we don't know the PostgreSQL include path.
+ - Fix error message when starting overlapping transactions and such (#303).
+ - Fix potential crashes when converting invalid strings to floats (#307, #308).
+7.0.5
+ - Compile fix for g++ 10: include `<limits>` (#292).
+ - Cleaned up error-checking of PG results.  (#280).
+ - The `esc()` methods now also take `std::string_view` (#295).
+7.0.4
+ - Fix possible crash in `connection::connection_string` (#290).
+ - Fix filtering of default values in `connection::connection_string` (#288).
+ - Deprecate `row::swap` and public inheritance of iterators from `row`.
+ - More copy/move/default constructors/assignments on result iterators.
+ - More copy/move/default constructors/assignments on row iterators.
+7.0.3
+ - Fixed misreporting of broken connection as `sql_error` (#280).
+ - Replaced non-ASCII test texts with escape codes (#282, #283).
+ - `ilostream` could truncate at `0xff` byte at buffer boundary (#284, #286).
+7.0.2
+ - New query function: `query_value`, queries and converts a single value.
+ - A `stream_from` stream can now be iterated.
+ - More callable types qualify as transactors, thanks to `std::invoke`.
+7.0.1
+ - Windows build fixes.
+ - Documentation for writing your own string conversions.
+ - `transaction_rollback` and children are now `sql_error`, not just `failure`.
 7.0.0
  - Bumped minimum required C++ version to C++17.
  - Everything has changed.  If you're porting from older versions, be careful!
@@ -10,33 +118,36 @@
  - Reading a variable written from raw SQL, procedures, etc, will now work.
  - Prepared statements are now registered immediately.
  - If you do weird stuff with preparing/unpreparing statements, it may break.
- - Changed exceptions and errors for e.g. overwriting a prepared statement.
+ - Changed exceptions and errors for many error situations.
  - Mishandling prepared statements will now break the connection.
  - Many string references and const char pointers are now `std::string_view`.
+ - New `zview` class wraps `string_view` for string with terminating zero.
  - The `stream_base` abstract base class is gone.
  - Transactions no longer have an `isolation_tag` nested type.
  - The `isolation_traits` type is gone.
  - There's no more `pqxx_exception`.  Complicated things too much.
  - `pqxx::string_traits<>::name()` has been replaced with `pqxx::type_name`.
+ - `to_string()` can now handle `std::vector` (to produce an SQL array).
  - All `from_string()` that took a C string now take a `std::string_view`.
  - There are now separate `string_traits` and `null_traits` templates.
  - Enums outside classes are now scoped enums.
  - `error_verbosity` is no longer nested in connection.
  - `connection::get_verbosity` is gone.
  - Some enums have changed names: `accesspolicy` to `access_policy`, and so on.
- - `dynamic_params` now takes an accessor.
+ - `dynamic_params` now accepts an accessor.
  - Fixed "const" support in arguments to parameterised/prepared statements.
  - Connection objects can now be moved.
- - `connections::options()` is gone.
+ - `connections::options()` has been replaced by `connection_string()`.
  - Replaced pqxx-fulltest with `test_all.py`.
  - Some `size_type` have changed to different types, to match current libpq.
  - Internal overflows are more consistently caught and reported.
- - Items marked "deprecated" have been removed.
- - win32/libpqxx.cxx and DllMain did not seem to be needed, so they're gone.
+ - Deprecated items have been removed.
  - Large objects now require backend version 9.3 or better.
  - Seeking inside large objects now supports 64-bit sizes.
  - Visual Studio project files and sample headers are gone.  Use CMake.
  - MinGW Makefiles are gone.  Use `configure` or CMake.
+ - Need PostgreSQL 10 to use robusttransaction.
+ - `robusttransaction` no longer uses a log table.  Feel free to drop it.
 6.4.4
  - Use pkg-config if pg-config is not available.
  - In CMake build, prefer CMake's config headers over any found in source tree.

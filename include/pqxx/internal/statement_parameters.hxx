@@ -4,11 +4,11 @@
  *
  * DO NOT INCLUDE THIS FILE DIRECTLY.  Other headers include it for you.
  *
- * Copyright (c) 2000-2019, Jeroen T. Vermeulen.
+ * Copyright (c) 2000-2020, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
- * COPYING with this source code, please notify the distributor of this mistake,
- * or contact the author.
+ * COPYING with this source code, please notify the distributor of this
+ * mistake, or contact the author.
  */
 #ifndef PQXX_H_STATEMENT_PARAMETER
 #define PQXX_H_STATEMENT_PARAMETER
@@ -29,8 +29,9 @@
 
 namespace pqxx::internal
 {
-template<typename ITERATOR> constexpr inline const auto iterator_identity =
-	[](decltype(*std::declval<ITERATOR>()) x){ return x; };
+template<typename ITERATOR>
+constexpr inline auto const iterator_identity{
+  [](decltype(*std::declval<ITERATOR>()) x) { return x; }};
 
 
 // TODO: C++20 "ranges" alternative.
@@ -52,13 +53,14 @@ template<typename ITERATOR> constexpr inline const auto iterator_identity =
  * The ACCESSOR is an optional callable (such as a lambda).  If you pass an
  * accessor @c a, then each parameter @c p goes into your statement as @c a(p).
  */
-template<typename IT, typename ACCESSOR=decltype(iterator_identity<IT>)>
+template<typename IT, typename ACCESSOR = decltype(iterator_identity<IT>)>
 class dynamic_params
 {
 public:
   /// Wrap a sequence of pointers or iterators.
   constexpr dynamic_params(IT begin, IT end) :
-	m_begin(begin), m_end(end), m_accessor(iterator_identity<IT>) {}
+          m_begin(begin), m_end(end), m_accessor(iterator_identity<IT>)
+  {}
 
   /// Wrap a sequence of pointers or iterators.
   /** This version takes an accessor callable.  If you pass an accessor @c acc,
@@ -66,12 +68,13 @@ public:
    * @c acc(p).
    */
   constexpr dynamic_params(IT begin, IT end, ACCESSOR &acc) :
-	m_begin(begin), m_end(end), m_accessor(acc) {}
+          m_begin(begin), m_end(end), m_accessor(acc)
+  {}
 
   /// Wrap a container.
-  template<typename C> explicit constexpr
-  dynamic_params(C &container) :
-	dynamic_params(std::begin(container), std::end(container))
+  template<typename C>
+  explicit constexpr dynamic_params(C &container) :
+          dynamic_params(std::begin(container), std::end(container))
   {}
 
   /// Wrap a container.
@@ -79,12 +82,9 @@ public:
    * then any parameter @c p will go into the statement's parameter list as
    * @c acc(p).
    */
-  template<typename C> explicit constexpr
-  dynamic_params(C &container, ACCESSOR &acc) :
-	dynamic_params(
-		std::begin(container),
-		std::end(container),
-		acc)
+  template<typename C>
+  explicit constexpr dynamic_params(C &container, ACCESSOR &acc) :
+          dynamic_params(std::begin(container), std::end(container), acc)
   {}
 
   constexpr IT begin() const { return m_begin; }
@@ -92,44 +92,13 @@ public:
 
   constexpr auto access(decltype(*std::declval<IT>()) value) const
     -> decltype(std::declval<ACCESSOR>()(value))
-	{ return m_accessor(value); }
-
-private:
-  const IT m_begin, m_end;
-  ACCESSOR m_accessor = iterator_identity<IT>;
-};
-
-
-class PQXX_LIBEXPORT statement_parameters
-{
-protected:
-  statement_parameters() =default;
-  statement_parameters &operator=(const statement_parameters &) =delete;
-
-  void add_param() { this->add_checked_param("", false, false); }
-  template<typename T> void add_param(const T &v, bool nonnull)
   {
-    nonnull = (nonnull && not is_null(v));
-    this->add_checked_param(
-	(nonnull ? pqxx::to_string(v) : ""),
-	nonnull,
-	false);
+    return m_accessor(value);
   }
-  void add_binary_param(const binarystring &b, bool nonnull)
-	{ this->add_checked_param(b.str(), nonnull, true); }
-
-  /// Marshall parameter values into C-compatible arrays for passing to libpq.
-  int marshall(
-	std::vector<const char *> &values,
-	std::vector<int> &lengths,
-	std::vector<int> &binaries) const;
 
 private:
-  void add_checked_param(const std::string &value, bool nonnull, bool binary);
-
-  std::vector<std::string> m_values;
-  std::vector<bool> m_nonnull;
-  std::vector<bool> m_binary;
+  IT const m_begin, m_end;
+  ACCESSOR m_accessor = iterator_identity<IT>;
 };
 
 
@@ -137,15 +106,17 @@ private:
 /** Compiles arguments for prepared statements and parameterised queries into
  * a format that can be passed into libpq.
  *
- * Objects of this type are meant to be short-lived.  If you pass in a non-null
- * pointer as a parameter, it may simply use that pointer as a parameter value.
+ * Objects of this type are meant to be short-lived.  For example, if you pass
+ * in a non-null pointer as a parameter, it may simply use that pointer as a
+ * parameter value.  All values referenced by parameters must remain "live"
+ * until the call is complete.
  */
 struct params
 {
   /// Construct directly from a series of statement arguments.
   /** The arrays all default to zero, null, and empty strings.
    */
-  template<typename ...Args> constexpr params(Args && ... args)
+  template<typename... Args> constexpr params(Args &&... args)
   {
     strings.reserve(sizeof...(args));
     lengths.reserve(sizeof...(args));
@@ -157,27 +128,28 @@ struct params
   }
 
   /// Compose a vector of pointers to parameter string values.
-  std::vector<const char *> get_pointers() const
+  std::vector<char const *> get_pointers() const
   {
-    const std::size_t num_fields = lengths.size();
-    std::size_t cur_string = 0, cur_bin_string = 0;
-    std::vector<const char *> pointers(num_fields);
-    for (std::size_t index = 0; index < num_fields; index++)
+    std::size_t const num_fields{std::size(lengths)};
+    std::size_t cur_string{0}, cur_bin_string{0};
+    std::vector<char const *> pointers(num_fields);
+    for (std::size_t index{0}; index < num_fields; index++)
     {
-      const char *value;
-      if (binaries[index])
+      char const *value;
+      if (binaries[index] != 0)
       {
-        value = bin_strings[cur_bin_string].get();
+        value =
+          reinterpret_cast<char const *>(bin_strings[cur_bin_string].data());
         cur_bin_string++;
       }
-      else if (nonnulls[index])
+      else if (nonnulls[index] != 0)
       {
         value = strings[cur_string].c_str();
         cur_string++;
       }
       else
       {
-         value = nullptr;
+        value = nullptr;
       }
       pointers[index] = value;
     }
@@ -193,16 +165,17 @@ struct params
   /// As used by libpq: boolean "is this parameter in binary format?"
   std::vector<int> binaries;
   /// Binary string values, for binary parameters.
-  std::vector<pqxx::binarystring> bin_strings;
+  std::vector<std::basic_string_view<std::byte>> bin_strings;
 
 private:
   /// Add a non-null string field.
-  void add_field(std::string str)
+  void add_field(std::string text)
   {
-    lengths.push_back(int(str.size()));
+    // TODO: Use C++20's std::ssize().
+    lengths.push_back(int(std::size(text)));
     nonnulls.push_back(1);
     binaries.push_back(0);
-    strings.emplace_back(std::move(str));
+    strings.emplace_back(std::move(text));
   }
 
   /// Compile one argument (specialised for null pointer, a null value).
@@ -214,9 +187,20 @@ private:
   }
 
   /// Compile one argument (specialised for binarystring).
-  void add_field(const binarystring &arg)
+  void add_field(binarystring const &arg)
   {
-    lengths.push_back(int(arg.size()));
+    lengths.push_back(int(std::size(arg)));
+    nonnulls.push_back(1);
+    binaries.push_back(1);
+    bin_strings.push_back(std::basic_string_view<std::byte>{
+      reinterpret_cast<std::byte const *>(arg.data()), std::size(arg)});
+  }
+
+  /// Compile one binary argument.
+  void add_field(std::basic_string_view<std::byte> arg)
+  {
+    // TODO: Use C++20's std::ssize().
+    lengths.push_back(int(std::size(arg)));
     nonnulls.push_back(1);
     binaries.push_back(1);
     bin_strings.push_back(arg);
@@ -225,17 +209,55 @@ private:
   /// Compile one argument (default, generic implementation).
   /** Uses string_traits to represent the argument as a std::string.
    */
-  template<typename Arg> void add_field(const Arg &arg)
+  template<typename Arg> void add_field(Arg const &arg)
   {
-    if (is_null(arg)) add_field(nullptr);
-    else add_field(to_string(arg));
+    if (is_null(arg))
+      add_field(nullptr);
+    else
+      add_field(to_string(arg));
+  }
+
+  /// Special treatment for smart pointers, std::optional, etc.
+  /** These overload allow parameters to "see through" some standard wrapper
+   * types into the underlying type.
+   *
+   * It's not strictly needed, but consider what happens when you pass e.g.
+   * @c std::optional<std::basic_string<std::byte>>.  It would otherwise go in
+   * as a normal parameter, meaning libpqxx converts the value to a string and
+   * passes it as a text parameter.  But with these overloads, it will end up
+   * in the @c std::basic_string<std::byte> overload, which gets passed in a
+   * binary format.  This saves us an encoding pass, transfers only half the
+   * number of bytes, and saves the backend a decoding pass.
+   */
+  template<typename Arg> void add_field(std::shared_ptr<Arg> arg)
+  {
+    if (arg)
+      add_field(*arg);
+    else
+      add_field(nullptr);
+  }
+  /// Special treatment for smart pointers, std::optional, etc.
+  template<typename Arg> void add_field(std::unique_ptr<Arg> arg)
+  {
+    if (arg)
+      add_field(*arg);
+    else
+      add_field(nullptr);
+  }
+  /// Special treatment for smart pointers, std::optional, etc.
+  template<typename Arg> void add_field(std::optional<Arg> arg)
+  {
+    if (arg.has_value())
+      add_field(arg.value());
+    else
+      add_field(nullptr);
   }
 
   /// Compile a dynamic_params object into a dynamic number of parameters.
   template<typename IT, typename ACCESSOR>
-  void add_field(const dynamic_params<IT, ACCESSOR> &parameters)
+  void add_field(dynamic_params<IT, ACCESSOR> const &parameters)
   {
-    for (auto param: parameters) add_field(parameters.access(param));
+    for (auto param : parameters) add_field(parameters.access(param));
   }
 
   /// Compile argument list.
@@ -246,8 +268,8 @@ private:
    * @param arg Current argument to be compiled.
    * @param args Optional remaining arguments, to be compiled recursively.
    */
-  template<typename Arg, typename ...More>
-  void add_fields(Arg &&arg, More && ... args)
+  template<typename Arg, typename... More>
+  void add_fields(Arg &&arg, More &&... args)
   {
     add_field(std::forward<Arg>(arg));
     // Compile remaining arguments, if any.

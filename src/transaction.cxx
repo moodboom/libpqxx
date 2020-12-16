@@ -2,11 +2,11 @@
  *
  * pqxx::transaction represents a regular database transaction.
  *
- * Copyright (c) 2000-2019, Jeroen T. Vermeulen.
+ * Copyright (c) 2000-2020, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
- * COPYING with this source code, please notify the distributor of this mistake,
- * or contact the author.
+ * COPYING with this source code, please notify the distributor of this
+ * mistake, or contact the author.
  */
 #include "pqxx-source.hxx"
 
@@ -18,10 +18,8 @@
 
 
 pqxx::internal::basic_transaction::basic_transaction(
-	connection &C,
-	const char begin_command[]) :
-  namedclass{"transaction"},
-  dbtransaction(C)
+  connection &c, char const begin_command[]) :
+        namedclass{"transaction"}, dbtransaction(c)
 {
   register_transaction();
   direct_exec(begin_command);
@@ -30,23 +28,25 @@ pqxx::internal::basic_transaction::basic_transaction(
 
 void pqxx::internal::basic_transaction::do_commit()
 {
+  static auto const commit_q{std::make_shared<std::string>("COMMIT")};
   try
   {
-    direct_exec("COMMIT");
+    direct_exec(commit_q);
   }
-  catch (const statement_completion_unknown &e)
+  catch (statement_completion_unknown const &e)
   {
     // Outcome of "commit" is unknown.  This is a disaster: we don't know the
     // resulting state of the database.
     process_notice(e.what() + std::string{"\n"});
-    const std::string msg =
-      "WARNING: Commit of transaction '" + name() + "' is unknown. "
-	"There is no way to tell whether the transaction succeeded "
-	"or was aborted except to check manually.";
+    auto const msg{
+      "WARNING: Commit of transaction '" + name() +
+      "' is unknown. "
+      "There is no way to tell whether the transaction succeeded "
+      "or was aborted except to check manually."};
     process_notice(msg + "\n");
     throw in_doubt_error{msg};
   }
-  catch (const std::exception &e)
+  catch (std::exception const &e)
   {
     if (not conn().is_open())
     {
@@ -54,14 +54,16 @@ void pqxx::internal::basic_transaction::do_commit()
       // telling what happened on the other end.  >8-O
       process_notice(e.what() + std::string{"\n"});
 
-      const std::string Msg =
-	"WARNING: Connection lost while committing transaction "
-	"'" + name() + "'. "
-	"There is no way to tell whether the transaction succeeded "
-	"or was aborted except to check manually.";
+      auto const msg{
+        "WARNING: Connection lost while committing transaction "
+        "'" +
+        name() +
+        "'. "
+        "There is no way to tell whether the transaction succeeded "
+        "or was aborted except to check manually."};
 
-      process_notice(Msg + "\n");
-      throw in_doubt_error{Msg};
+      process_notice(msg + "\n");
+      throw in_doubt_error{msg};
     }
     else
     {
@@ -75,5 +77,6 @@ void pqxx::internal::basic_transaction::do_commit()
 
 void pqxx::internal::basic_transaction::do_abort()
 {
-  direct_exec("ROLLBACK");
+  static auto const rollback_q{std::make_shared<std::string>("ROLLBACK")};
+  direct_exec(rollback_q);
 }

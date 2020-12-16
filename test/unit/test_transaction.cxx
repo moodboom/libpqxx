@@ -1,3 +1,6 @@
+#include <pqxx/nontransaction>
+#include <pqxx/robusttransaction>
+
 #include "../test_helpers.hxx"
 
 
@@ -9,22 +12,16 @@ void test_nontransaction_continues_after_error()
   pqxx::nontransaction tx{c};
 
   PQXX_CHECK_EQUAL(
-	tx.exec1("SELECT 9")[0].as<int>(),
-	9,
-	"Simple query went wrong.");
+    tx.query_value<int>("SELECT 9"), 9, "Simple query went wrong.");
   PQXX_CHECK_THROWS(
-	tx.exec("SELECT 1/0"),
-	pqxx::sql_error,
-	"Expected error did not happen.");
+    tx.exec("SELECT 1/0"), pqxx::sql_error, "Expected error did not happen.");
 
   PQXX_CHECK_EQUAL(
-	tx.exec1("SELECT 5")[0].as<int>(),
-	5,
-	"Wrong result after error.");
+    tx.query_value<int>("SELECT 5"), 5, "Wrong result after error.");
 }
 
 
-const std::string table = "pqxx_test_transaction";
+std::string const table{"pqxx_test_transaction"};
 
 
 void delete_temp_table(pqxx::transaction_base &tx)
@@ -47,12 +44,11 @@ void insert_temp_table(pqxx::transaction_base &tx, int value)
 
 int count_temp_table(pqxx::transaction_base &tx)
 {
-  return tx.exec1("SELECT count(*) FROM " + table)[0].as<int>();
+  return tx.query_value<int>("SELECT count(*) FROM " + table);
 }
 
 
-template<typename TX>
-void test_db_transaction_rolls_back()
+template<typename TX> void test_db_transaction_rolls_back()
 {
   pqxx::connection c;
   pqxx::nontransaction tx1{c};
@@ -66,9 +62,8 @@ void test_db_transaction_rolls_back()
 
   pqxx::nontransaction tx3{c};
   PQXX_CHECK_EQUAL(
-	count_temp_table(tx3),
-	0,
-	"Abort on " + tx3.classname() + " did not roll back.");
+    count_temp_table(tx3), 0,
+    "Abort on " + tx3.classname() + " did not roll back.");
   delete_temp_table(tx3);
 }
 
@@ -88,9 +83,8 @@ void test_nontransaction_autocommits()
 
   pqxx::nontransaction tx3{c};
   PQXX_CHECK_EQUAL(
-	count_temp_table(tx3),
-	1,
-	"Did not keep effect of aborted nontransaction.");
+    count_temp_table(tx3), 1,
+    "Did not keep effect of aborted nontransaction.");
   delete_temp_table(tx3);
 }
 
@@ -113,17 +107,14 @@ template<typename TX> void test_double_close()
   tx3.exec1("SELECT 3");
   tx3.commit();
   PQXX_CHECK_THROWS(
-	tx3.abort(),
-	pqxx::usage_error,
-	"Abort after commit not caught.");;
+    tx3.abort(), pqxx::usage_error, "Abort after commit not caught.");
+  ;
 
   TX tx4{c};
   tx4.exec1("SELECT 4");
   tx4.abort();
   PQXX_CHECK_THROWS(
-	tx4.commit(),
-	pqxx::usage_error,
-	"Commit after abort not caught.");
+    tx4.commit(), pqxx::usage_error, "Commit after abort not caught.");
 }
 
 

@@ -2,11 +2,11 @@
  *
  * pqxx::field refers to a field in a query result.
  *
- * Copyright (c) 2000-2019, Jeroen T. Vermeulen.
+ * Copyright (c) 2000-2020, Jeroen T. Vermeulen.
  *
  * See COPYING for copyright license.  If you did not receive a file called
- * COPYING with this source code, please notify the distributor of this mistake,
- * or contact the author.
+ * COPYING with this source code, please notify the distributor of this
+ * mistake, or contact the author.
  */
 #include "pqxx-source.hxx"
 
@@ -17,24 +17,23 @@
 #include "pqxx/result"
 
 
-pqxx::field::field(const pqxx::row &R, pqxx::row::size_type C) noexcept :
-  m_col{C},
-  m_home{R.m_result},
-  m_row{R.m_index}
+pqxx::field::field(pqxx::row const &r, pqxx::row::size_type c) noexcept :
+        m_col{c}, m_home{r.m_result}, m_row{r.m_index}
+{}
+
+
+bool pqxx::field::operator==(field const &rhs) const
 {
+  if (is_null() and rhs.is_null())
+    return true;
+  if (is_null() != rhs.is_null())
+    return false;
+  auto const s{size()};
+  return (s == std::size(rhs)) and (std::memcmp(c_str(), rhs.c_str(), s) == 0);
 }
 
 
-bool pqxx::field::operator==(const field &rhs) const
-{
-  if (is_null() != rhs.is_null()) return false;
-  // TODO: Verify null handling decision
-  const size_type s = size();
-  return (s == rhs.size()) and (std::memcmp(c_str(), rhs.c_str(), s) == 0);
-}
-
-
-const char *pqxx::field::name() const
+char const *pqxx::field::name() const
 {
   return home().column_name(col());
 }
@@ -58,9 +57,9 @@ pqxx::row::size_type pqxx::field::table_column() const
 }
 
 
-const char *pqxx::field::c_str() const
+char const *pqxx::field::c_str() const
 {
-  return home().GetValue(idx(), col());
+  return home().get_value(idx(), col());
 }
 
 

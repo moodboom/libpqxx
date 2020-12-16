@@ -6,18 +6,16 @@ namespace
 {
 void test_thread_safety_model()
 {
-  const auto model = pqxx::describe_thread_safety();
+  auto const model{pqxx::describe_thread_safety()};
 
   if (model.safe_libpq and model.safe_kerberos)
     PQXX_CHECK_EQUAL(
-	model.description,
-	"",
-	"Thread-safety looks okay but model description is nonempty.");
+      model.description, "",
+      "Thread-safety looks okay but model description is nonempty.");
   else
     PQXX_CHECK_NOT_EQUAL(
-	model.description,
-	"",
-	"Thread-safety model is imperfect but lacks description.");
+      model.description, "",
+      "Thread-safety model is imperfect but lacks description.");
 }
 
 
