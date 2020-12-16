@@ -1,3 +1,11 @@
+6.4.8
+ - Hopefully fix `extract_value` export problem with some shared builds.
+ - Disable broken Python lint checks in lint script.
+ - Fix lint script for out-of-tree builds.
+6.4.7
+ - Fix link error: missing `extract_value<nullptr_t>` in `stream_from`. (#340)
+6.4.6
+ - `ilostream` could truncate at `0xff` byte at buffer boundary (#284, #286).
 6.4.5
  - Fixed "const" support in arguments to parameterised/prepared statements.
 6.4.4

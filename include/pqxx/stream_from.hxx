@@ -183,7 +183,7 @@ template<typename Tuple, std::size_t I> auto stream_from::tokenize_ith(
 }
 
 
-template<typename T> void stream_from::extract_value(
+template<typename T> inline void stream_from::extract_value(
   const std::string &line,
   T& t,
   std::string::size_type &here,
@@ -196,7 +196,7 @@ template<typename T> void stream_from::extract_value(
     t = internal::null_value<T>();
 }
 
-template<> void stream_from::extract_value<std::nullptr_t>(
+template<> void PQXX_LIBEXPORT stream_from::extract_value<std::nullptr_t>(
   const std::string &line,
   std::nullptr_t&,
   std::string::size_type &here,
