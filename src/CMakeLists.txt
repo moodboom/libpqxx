@@ -67,7 +67,6 @@ if(pqxx_target_type STREQUAL "SHARED_LIBRARY")
     target_compile_definitions(pqxx PUBLIC PQXX_SHARED)
 endif()
 
-<<<<<<< HEAD
 # MDM un-experimentally re-enabled.  WTF
 # XXX: Experimentally disabled.
 if(NOT SKIP_PQXX_STATIC)
@@ -76,7 +75,7 @@ if(NOT SKIP_PQXX_STATIC)
     set_target_properties(pqxx_static PROPERTIES OUTPUT_NAME pqxx)
     library_target_setup(pqxx_static)
 endif()
-=======
+
 set_target_properties(
     pqxx PROPERTIES
     OUTPUT_NAME $<IF:$<PLATFORM_ID:Windows>,pqxx,pqxx-${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}>
@@ -93,4 +92,3 @@ configure_file(${PROJECT_SOURCE_DIR}/libpqxx.pc.in ${PROJECT_BINARY_DIR}/libpqxx
 install(FILES ${PROJECT_BINARY_DIR}/libpqxx.pc
 	DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
 )
->>>>>>> jvt-master
