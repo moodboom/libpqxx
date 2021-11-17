@@ -74,6 +74,15 @@ if(pqxx_target_type STREQUAL "SHARED_LIBRARY")
     target_compile_definitions(pqxx PUBLIC PQXX_SHARED)
 endif()
 
+# MDM un-experimentally re-enabled.  WTF
+# XXX: Experimentally disabled.
+if(NOT SKIP_PQXX_STATIC)
+    # Build a static libary
+    add_library(pqxx_static STATIC ${CXX_SOURCES})
+    set_target_properties(pqxx_static PROPERTIES OUTPUT_NAME pqxx)
+    library_target_setup(pqxx_static)
+endif()
+
 set_target_properties(
     pqxx PROPERTIES
     OUTPUT_NAME $<IF:$<PLATFORM_ID:Windows>,pqxx,pqxx-${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}>
